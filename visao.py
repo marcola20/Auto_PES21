@@ -177,7 +177,14 @@ def ler_regiao(regiao: tuple, tentativas: int = 3, espera: float = 0.4,
 # torcida, degraus, listras do campo. O painel do jogo e cor chapada. Exigir
 # desvio quase zero em DOIS pontos distantes elimina o falso positivo - um
 # estadio teria que ser liso nos dois lugares ao mesmo tempo.
-REGIOES_PAINEL_VERDE = [(250, 200, 420, 330), (1520, 300, 1690, 700)]
+#
+# As duas manchas ficam na faixa de CIMA do painel (y 200-330), acima dos
+# escudos, e espelhadas em relacao ao centro da tela. A mancha da direita ja
+# desceu ate y 700, colada no escudo do time de fora: o escudo redondo do
+# Cruzeiro, mais largo que os outros, invadiu a mancha, a textura estourou e o
+# painel nunca foi reconhecido - a partida ficou parada no Intervalo.
+# Nada de escudo, nome ou estatistica pode cair dentro destas regioes.
+REGIOES_PAINEL_VERDE = [(250, 200, 420, 330), (1500, 200, 1670, 330)]
 LIMIAR_PAINEL_VERDE = 0.95   # fracao de pixels verdes exigida em cada mancha
 LIMIAR_TEXTURA_PAINEL = 5.0  # desvio maximo: acima disso e textura, nao painel
 
