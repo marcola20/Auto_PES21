@@ -80,6 +80,11 @@ SEGUNDOS_LIMITE_FORMACAO = 180
 SEGUNDOS_APOS_PARAR      = 8    # espera a NVIDIA fechar o arquivo
 SEGUNDOS_BUSCA_EXTRA     = 25   # procura o video novo por mais esse tempo
 
+# Renomear o video para "Casa x Fora.mp4". Se o arquivo ainda estiver em uso,
+# tenta de novo algumas vezes antes de desistir (e manter o nome da NVIDIA).
+TENTATIVAS_RENOMEAR                = 10
+SEGUNDOS_ENTRE_TENTATIVAS_RENOMEAR = 3
+
 INTERVALO_CHECAGEM_FIM = 2.0    # de quanto em quanto tempo olhar a tela
 PAUSA_APOS_PAINEL      = 2.5    # espera depois de confirmar um painel do jogo
 PAUSA_MENU_UNIFORME    = 0.8    # entre as teclas dentro da tela "Uniforme"
@@ -193,6 +198,35 @@ def esperar_arquivo_estabilizar(caminho: Path, tentativas: int = 15) -> bool:
         anterior = atual
         time.sleep(1)
     return False
+
+
+def renomear_video(caminho: Path, casa: str, fora: str):
+    """Troca o nome que a NVIDIA deu ao video pelo nome do jogo.
+
+    'eFootball PES 2021 2026.09.16 - 11.07.14.13.mp4' -> 'Corinthians x Grêmio.mp4'
+
+    Devolve o caminho novo, ou None se nao conseguiu. NUNCA levanta erro: o
+    video ja esta salvo, e um nome feio nao pode derrubar o loop.
+    """
+    base = f"{times.nome_oficial(casa)} x {times.nome_oficial(fora)}"
+
+    # Mesmo jogo gravado de novo: nao sobrescreve, numera.
+    destino = caminho.with_name(base + caminho.suffix)
+    numero = 2
+    while destino.exists():
+        destino = caminho.with_name(f"{base} ({numero}){caminho.suffix}")
+        numero += 1
+
+    # Se a NVIDIA ainda estiver segurando o arquivo, o Windows recusa a troca
+    # de nome (PermissionError). Da mais algumas chances antes de desistir.
+    for tentativa in range(TENTATIVAS_RENOMEAR):
+        try:
+            return caminho.rename(destino)
+        except OSError as erro:
+            ultimo_erro = erro
+            time.sleep(SEGUNDOS_ENTRE_TENTATIVAS_RENOMEAR)
+    detalhe(f"(nao consegui renomear o video: {ultimo_erro})")
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -758,6 +792,10 @@ def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
     tamanho = novo.stat().st_size / (1024 * 1024)
     detalhe(f"OK - {novo.name}  ({tamanho:.0f} MB)")
     # Daqui para baixo o video ja esta salvo: o que falhar agora nao apaga isso.
+
+    renomeado = renomear_video(novo, casa, fora)
+    if renomeado is not None:
+        detalhe(f"Renomeado para: {renomeado.name}")
 
     # No ultimo jogo nao ha proximo, entao nao precisa voltar para a selecao.
     if indice < total and not voltar_para_selecao():

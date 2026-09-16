@@ -42,6 +42,15 @@ def indice_do_time(nome: str) -> int:
     )
 
 
+def nome_oficial(nome: str) -> str:
+    """O nome como esta na lista, com acento: 'gremio' -> 'Grêmio'.
+
+    Serve para o nome do video sair bonito mesmo que em JOGOS o time tenha
+    sido digitado sem acento.
+    """
+    return TIMES[indice_do_time(nome)]
+
+
 def normalizar(texto: str) -> str:
     """Tira acentos e deixa minusculo: 'São Paulo' -> 'sao paulo'."""
     sem_acento = unicodedata.normalize("NFKD", texto)
