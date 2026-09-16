@@ -1,0 +1,13 @@
+# Cache do Python - gerado sozinho, e ja causou confusao aqui (versao velha
+# de modulo sendo usada depois de uma edicao).
+__pycache__/
+
+# Prints de tela inteira: ~40 MB, e sao imagens do jogo. Servem para
+# diagnostico local, nao para o codigo funcionar.
+telas/
+diagnostico*/
+diagnostico_*.png
+print_teste.png
+
+# templates/ FICA no repositorio de proposito: sao recortes pequenos (~240 KB)
+# e o script nao roda sem eles.
