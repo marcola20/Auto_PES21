@@ -1,55 +1,24 @@
-"""
-rodar_jogos.py  --  Auto_PES21 / etapa 5 (loop completo)
-
-Roda uma lista de partidas CPU x CPU, gravando cada uma em um video separado.
-
-REGRA DE OURO DESTE SCRIPT: na duvida, PARAR.
-Cada passo confere na tela que deu certo antes de seguir. Se algo nao bater, o
-script aborta e diz onde parou. Ele nunca "tenta continuar mesmo assim" - um
-loop dessincronizado gravaria menus e perderia partidas inteiras, e voce so
-descobriria horas depois.
-
-COMO PREPARAR (feito UMA vez, na mao, antes de rodar):
-  1. Abra o PES em tela cheia, 1920x1080.
-  2. Va em Partida local.
-  3. Na tela "Em casa / Fora", deixe o controle na COLUNA DO MEIO, para a CPU
-     jogar dos dois lados. Confirme.
-  4. Deixe o painel "Em casa" ATIVO, na liga Brasileirao Serie A. Tanto faz
-     parar na lista de LIGAS ou na de TIMES - o script entra na de times
-     sozinho se precisar.
-  5. Confira que a gravacao da NVIDIA esta DESLIGADA.
-  6. Rode este script e volte para a janela do PES.
-
-A tela de escolha de lado so aparece uma vez por sessao: ao voltar por
-"Selecionar time" o jogo pula ela. Por isso ela fica no preparo manual - nao
-compensa automatizar um passo que acontece uma vez so.
-"""
-
 # ==========================================================================
 # CONFIGURACOES
 # ==========================================================================
 
 # A lista de partidas: (time da casa, time de fora).
 # Os nomes precisam existir em times.py. Acento e maiuscula sao opcionais.
+#
+# Jogo que NAO e da liga ganha um terceiro item com o nome da competicao, que
+# vai para o nome do video no lugar da serie: ("Santos", "Cruzeiro", "Supercopa")
+# -> "Santos vs Cruzeiro ｜ Supercopa.mp4". Importa porque o site da liga
+# descobre a competicao pelo nome do video: sem isso, uma final da Supercopa
+# entre dois times da Serie A seria procurada na Serie A.
 JOGOS = [
-    ("Corinthians", "Gremio"),
-    ("Inter",       "Botafogo"),
-    ("Vasco",       "Santos"),
+    ("Santos", "Cruzeiro", "Supercopa"),
 ]
 
-# Pares de times cujos uniformes se confundem em campo. Quando um jogo da lista
-# cair num desses pares, o script entra na tela "Uniforme" antes de comecar e
-# troca o uniforme do time de BAIXO (a linha "Fora").
-#
-# A troca e sempre na linha "Fora", nos dois sentidos: se o Vasco joga em casa,
-# quem muda e o adversario (que esta no slot fora); se o Vasco joga fora, quem
-# muda e o proprio Vasco (que tambem esta no slot fora).
-#
-# Isto e um CONTORNO. A causa real e a cor registrada das camisas 1 e 2 do
-# Vasco estar trocada nos dados do jogo. Se voce corrigir isso no Modo Editar
-# do PES, esvazie este dicionario e o script volta a iniciar as partidas direto.
 CONFLITOS_DE_UNIFORME = {
-    "Vasco": ["Corinthians", "Botafogo", "Coritiba", "Santos"],
+    "Vasco":   ["Corinthians", "Botafogo", "Coritiba", "Santos",
+                "Figueirense", "Sport", "São Paulo"],
+    "Vitória": ["Corinthians", "Botafogo", "Coritiba", "Santos",
+                "Figueirense", "Sport", "São Paulo", "Flamengo"],
 }
 
 PASTA_GRAVACOES = r"C:\Users\Marcola\Videos\NVIDIA\eFootball PES 2021"
@@ -60,28 +29,16 @@ MINUTOS_LIMITE_PARTIDA = 30  # se passar disso sem fim de jogo, aborta
 
 SEGUNDOS_APOS_CONFIRMAR  = 1.5  # espera a tela trocar depois de um Enter
 
-# Tempo entre mandar iniciar a partida e comecar a gravar. Serve para pular o
-# carregamento e a entrada dos times: a gravacao so comeca perto do apito.
-#
-# E uma LISTA, um valor por partida, porque o carregamento fica mais rapido a
-# cada jogo - o Windows e o jogo vao guardando em cache o que ja foi lido do
-# disco. Sem isso, a 3a partida comecaria a gravar com o jogo ja rolando.
-# A partir da 4a partida, repete o ultimo valor da lista.
-#
-# Se o video pegar tela de carregamento, aumente o valor daquela posicao; se
-# perder o comeco do jogo, diminua.
 SEGUNDOS_ANTES_DE_GRAVAR = [80, 70, 50]
 
-# Se templates/formacao.png existir, o script IGNORA a lista acima e espera a
-# tela de formacao aparecer de verdade. E melhor: o carregamento fica mais
-# rapido a cada partida de um jeito que nenhum numero fixo acompanha.
-# Este e so o limite de paciencia dessa espera.
 SEGUNDOS_LIMITE_FORMACAO = 180
 SEGUNDOS_APOS_PARAR      = 8    # espera a NVIDIA fechar o arquivo
 SEGUNDOS_BUSCA_EXTRA     = 25   # procura o video novo por mais esse tempo
 
-# Renomear o video para "Casa x Fora.mp4". Se o arquivo ainda estiver em uso,
-# tenta de novo algumas vezes antes de desistir (e manter o nome da NVIDIA).
+# O Windows nao aceita "|" em nome de arquivo. Esta e a barra "cheia" (U+FF5C),
+# que e permitida e na tela fica igual: "Corinthians vs Vitória ｜ Série B".
+SEPARADOR_SERIE = " ｜ "
+
 TENTATIVAS_RENOMEAR                = 10
 SEGUNDOS_ENTRE_TENTATIVAS_RENOMEAR = 3
 
@@ -117,7 +74,10 @@ PASTA_DIAGNOSTICO = "diagnostico_travou"
 # So funciona depois de TECLA_R1 estar definida em teclado.py; enquanto for
 # None, o script pula esta etapa inteira.
 VEZES_R1 = 2                     # quantas abas avancar a partir da inicial
-VEZES_BAIXO_NOS_EVENTOS = 5      # rolar a lista de eventos ate o fim
+VEZES_BAIXO_NOS_EVENTOS = 10     # rolar a lista de eventos ate o fim
+PAUSA_BAIXO_NOS_EVENTOS = 1.0    # entre um Baixo e outro: devagar, para o
+                                 # video mostrar a lista inteira, e nao so o
+                                 # topo e o fim
 SEGUNDOS_MOSTRANDO_EVENTOS = 8   # quanto tempo deixar a aba na tela
 
 # ==========================================================================
@@ -128,6 +88,7 @@ from pathlib import Path
 
 from PIL import Image
 
+import abrir_jogo
 import navegar
 import teclado
 import times
@@ -200,15 +161,25 @@ def esperar_arquivo_estabilizar(caminho: Path, tentativas: int = 15) -> bool:
     return False
 
 
-def renomear_video(caminho: Path, casa: str, fora: str):
+def renomear_video(caminho: Path, casa: str, fora: str, competicao: str = None):
     """Troca o nome que a NVIDIA deu ao video pelo nome do jogo.
 
-    'eFootball PES 2021 2026.09.16 - 11.07.14.13.mp4' -> 'Corinthians x Grêmio.mp4'
+    'eFootball PES 2021 2026.09.16 - 11.07.14.13.mp4'
+        -> 'Corinthians vs Vitória ｜ Série B.mp4'
+
+    A serie so entra quando os dois times sao da mesma: um jogo A x B (ou com
+    um time que so completa a liga) nao e de serie nenhuma. Se o jogo for de
+    outra competicao (ex. "Supercopa"), ela entra no lugar da serie.
 
     Devolve o caminho novo, ou None se nao conseguiu. NUNCA levanta erro: o
     video ja esta salvo, e um nome feio nao pode derrubar o loop.
     """
-    base = f"{times.nome_oficial(casa)} x {times.nome_oficial(fora)}"
+    base = f"{times.nome_oficial(casa)} vs {times.nome_oficial(fora)}"
+    serie = times.serie_do_time(casa)
+    if competicao:
+        base += f"{SEPARADOR_SERIE}{competicao}"
+    elif serie and serie == times.serie_do_time(fora):
+        base += f"{SEPARADOR_SERIE}Série {serie}"
 
     # Mesmo jogo gravado de novo: nao sobrescreve, numera.
     destino = caminho.with_name(base + caminho.suffix)
@@ -715,7 +686,10 @@ def mostrar_eventos_da_partida() -> bool:
 
     # Varios "Baixo" em vez de um: um clique so nao chega ao fim da lista, e o
     # cursor simplesmente para quando acaba - descer demais nao faz mal.
-    teclado.baixo(VEZES_BAIXO_NOS_EVENTOS)
+    # Um de cada vez e com pausa: em rajada a lista pulava do topo direto para
+    # o fim, e os eventos do meio nunca apareciam no video.
+    teclado.apertar(teclado.TECLA_BAIXO, VEZES_BAIXO_NOS_EVENTOS,
+                    pausa=PAUSA_BAIXO_NOS_EVENTOS)
     detalhe(f"mostrando os eventos da partida por {SEGUNDOS_MOSTRANDO_EVENTOS}s")
     time.sleep(SEGUNDOS_MOSTRANDO_EVENTOS)
     return True
@@ -751,7 +725,7 @@ def voltar_para_selecao() -> bool:
 
 
 def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
-                  pasta: Path) -> tuple:
+                  pasta: Path, competicao: str = None) -> tuple:
     """Roda uma partida. Devolve (seguiu_tudo_bem, gravou_o_video).
 
     Sao DUAS informacoes porque elas falham separado: a partida pode ter sido
@@ -793,7 +767,7 @@ def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
     detalhe(f"OK - {novo.name}  ({tamanho:.0f} MB)")
     # Daqui para baixo o video ja esta salvo: o que falhar agora nao apaga isso.
 
-    renomeado = renomear_video(novo, casa, fora)
+    renomeado = renomear_video(novo, casa, fora, competicao)
     if renomeado is not None:
         detalhe(f"Renomeado para: {renomeado.name}")
 
@@ -812,6 +786,11 @@ def contagem_regressiva(segundos: int) -> None:
     print("  Comecando!                       ")
 
 
+def jogos_da_fila() -> list:
+    """JOGOS sempre como (casa, fora, competicao); competicao None = liga."""
+    return [(j[0], j[1], j[2] if len(j) > 2 else None) for j in JOGOS]
+
+
 def conferir_preparo(pasta: Path) -> bool:
     """Checagens antes de comecar, para falhar cedo em vez de no meio do loop."""
     if not pasta.is_dir():
@@ -826,7 +805,7 @@ def conferir_preparo(pasta: Path) -> bool:
 
     # Nomes e templates de TODOS os jogos, conferidos antes do primeiro apito:
     # melhor descobrir um nome errado agora do que na 8a partida, de madrugada.
-    for casa, fora in JOGOS:
+    for casa, fora, _ in jogos_da_fila():
         for painel, nome in (("casa", casa), ("fora", fora)):
             try:
                 times.indice_do_time(nome)
@@ -844,21 +823,32 @@ def main() -> int:
     print("  AUTO_PES21  --  loop completo")
     print("=" * 66)
     print(f"\n{len(JOGOS)} jogo(s) na fila:")
-    for i, (casa, fora) in enumerate(JOGOS, 1):
-        print(f"  {i:2d}. {casa}  x  {fora}")
+    for i, (casa, fora, competicao) in enumerate(jogos_da_fila(), 1):
+        extra = f"  ({competicao})" if competicao else ""
+        print(f"  {i:2d}. {casa}  x  {fora}{extra}")
 
     print()
     if not conferir_preparo(pasta):
         return 1
     print("Preparo conferido: pasta, templates e nomes dos times estao OK.")
-    print("\nO PES precisa estar na LISTA DE TIMES do painel 'Em casa', com o")
-    print("controle ja deixado no meio na tela de escolha de lado.\n")
 
-    contagem_regressiva(SEGUNDOS_CONTAGEM)
+    if "--abrir" in sys.argv:
+        # Com --abrir o script parte do PES FECHADO: abre sider e jogo e para
+        # nos paineis de liga, que o primeiro jogo ja sabe atravessar.
+        print("\nModo --abrir: o PES precisa estar FECHADO.\n")
+        if not abrir_jogo.abrir_ate_as_ligas():
+            print("\nPAREI antes do primeiro jogo: o jogo nao chegou nos paineis de liga.")
+            return 1
+    else:
+        print("\nO PES precisa estar na LISTA DE TIMES do painel 'Em casa', com o")
+        print("controle ja deixado no meio na tela de escolha de lado.")
+        print("(Ou rode com --abrir, com o PES fechado, para abrir o jogo sozinho.)\n")
+        contagem_regressiva(SEGUNDOS_CONTAGEM)
 
     gravados = 0
-    for i, (casa, fora) in enumerate(JOGOS, 1):
-        seguiu, gravou = rodar_um_jogo(casa, fora, i, len(JOGOS), pasta)
+    for i, (casa, fora, competicao) in enumerate(jogos_da_fila(), 1):
+        seguiu, gravou = rodar_um_jogo(casa, fora, i, len(JOGOS), pasta,
+                                       competicao)
         if gravou:
             gravados += 1
 

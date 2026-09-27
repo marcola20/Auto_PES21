@@ -162,7 +162,7 @@ def conferir_distintos(capturas: list) -> bool:
     Se duas baterem, ou a lista tem menos times do que eu pensava, ou o cursor
     travou em algum ponto e parou de andar. Nos dois casos e erro.
     """
-    print("\nConferindo que os 12 nomes sao mesmo diferentes entre si...")
+    print(f"\nConferindo que os {len(capturas)} nomes sao mesmo diferentes entre si...")
     problemas = []
     for i in range(len(capturas)):
         for j in range(i + 1, len(capturas)):
@@ -219,7 +219,7 @@ def main() -> int:
 
     if not conferir_distintos(capturas):
         print("\n" + "-" * 66)
-        print("PAROU: as fotos nao batem com uma lista de 12 times distintos.")
+        print(f"PAROU: as fotos nao batem com uma lista de {len(times.TIMES)} times distintos.")
         print("-" * 66)
         print("  - A lista aberta era mesmo a do Brasileirao Serie A?")
         print("  - Aumente PAUSA_APOS_MOVER (o menu pode estar animando devagar).")

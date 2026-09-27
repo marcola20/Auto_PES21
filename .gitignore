@@ -11,3 +11,8 @@ print_teste.png
 
 # templates/ FICA no repositorio de proposito: sao recortes pequenos (~240 KB)
 # e o script nao roda sem eles.
+
+# Controle do enviar_resultados.py: o que ja foi enviado para o site. E
+# estado desta maquina, nao codigo.
+resultados_enviados.json
+resultados_enviados.tmp

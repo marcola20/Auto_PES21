@@ -144,7 +144,7 @@ def ir_para_time(painel: str, nome_do_time: str, falar=print) -> bool:
 
 
 def qual_time_esta_selecionado(painel: str) -> tuple:
-    """Diz qual time o cursor esta marcando agora, comparando com os 12 templates.
+    """Diz qual time o cursor esta marcando agora, comparando com os templates de todos os times.
 
     Devolve (nome, semelhanca) ou (None, 0.0) se nao reconhecer nenhum.
     Util para diagnostico: em vez de so dizer "nao era o esperado", diz o que era.

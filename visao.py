@@ -293,3 +293,66 @@ def eh_formacao(tela: Image.Image, template: Image.Image) -> bool:
     """
     recorte = tela.crop(REGIAO_FORMACAO)
     return diferenca_de_pixels(recorte, template) < LIMIAR_FIM_DE_JOGO
+
+
+# ---------------------------------------------------------------------------
+# Telas de abertura do jogo (do logo ate a escolha de lado)
+# ---------------------------------------------------------------------------
+
+# Uma regiao por tela, cada uma num pedaco que so aquela tela tem. Comparacao
+# de PIXELS, como nos paineis: sao todas imagens fixas do tema "Menu 2".
+# Medido nos prints da abertura de 2026-09-16: cada regiao da 0.0 na propria
+# tela e 28 ou mais em qualquer outra (a mais parecida foi o aviso contra a
+# escolha de lado: 30.3). O limiar de 15 fica no meio.
+#
+# Nenhuma regiao encosta no topo da tela: nos primeiros segundos o ReShade
+# (canto superior esquerdo) e a NVIDIA (canto superior direito) mostram avisos
+# por cima do jogo.
+REGIOES_ABERTURA = {
+    "titulo":  (600, 700, 1360, 940),   # logo "PES 2021 / THE 08/09 SEASON"
+                                        # (sem o "Pressione qualquer botao",
+                                        #  que pisca)
+    "aviso":   (420, 270, 1500, 480),   # texto "O servico online esta indisponivel"
+    "kickoff": (700, 200, 1000, 300),   # "KICK OFF" do menu principal
+    "submenu": (800, 250, 1280, 420),   # "Partida local" em destaque
+}
+
+
+def eh_tela_de_abertura(tela: Image.Image, nome: str,
+                        template: Image.Image) -> bool:
+    """True se a tela `nome` (uma das chaves de REGIOES_ABERTURA) esta aparecendo."""
+    recorte = tela.crop(REGIOES_ABERTURA[nome])
+    return diferenca_de_pixels(recorte, template) < LIMIAR_FIM_DE_JOGO
+
+
+# Escolha de lado ("Em casa" / "Fora"): as tres posicoes do controle do
+# Usuario 1. Aqui NAO uso template: a linha e quase toda cinza liso, e a
+# diferenca de pixels entre "controle na esquerda" e "controle no meio" deu so
+# 11 a 25 - perto demais do limiar para confiar.
+#
+# O que diferencia de verdade e o CONTORNO CIANO do controle ativo (os
+# inativos sao cinza). Medido: ~870 pixels ciano na posicao do controle e 0 nas
+# outras duas, e 0 em todas as outras telas da abertura.
+POSICOES_CONTROLE = {
+    "esquerda": (400, 160, 560, 240),
+    "meio":     (880, 160, 1040, 240),
+    "direita":  (1360, 160, 1520, 240),
+}
+MINIMO_CIANO = 400   # medido ~870 no controle; 0 onde nao ha controle
+
+
+def pixels_ciano(imagem: Image.Image) -> int:
+    return sum(1 for r, g, b in imagem.convert("RGB").get_flattened_data()
+               if r < 90 and g > 150 and b > 170)
+
+
+def posicao_do_controle(tela: Image.Image):
+    """Na escolha de lado, diz onde esta o controle: 'esquerda', 'meio',
+    'direita' - ou None se nao for essa tela.
+
+    Exige ciano em EXATAMENTE uma posicao. Duas ao mesmo tempo nao existe na
+    tela real; se acontecer, e outra coisa, e na duvida a resposta e None.
+    """
+    achadas = [nome for nome, regiao in POSICOES_CONTROLE.items()
+               if pixels_ciano(tela.crop(regiao)) >= MINIMO_CIANO]
+    return achadas[0] if len(achadas) == 1 else None

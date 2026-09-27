@@ -1,29 +1,53 @@
 """
 times.py  --  Auto_PES21
 
-Lista dos times do Brasileirao Serie A no PES 2021, na ORDEM ALFABETICA em que
-aparecem na tela de selecao. A ordem importa: e ela que diz quantas vezes
-apertar "Baixo" para chegar em cada time.
+Lista dos times no PES 2021, na ORDEM em que aparecem na tela de selecao. A
+ordem importa: e ela que diz quantas vezes apertar "Baixo" para chegar em cada
+time.
+
+Todos os times ficam dentro da competicao "Brasileirao Serie A" do PES, para a
+navegacao usar uma lista so. Mas a ordem ali NAO e alfabetica: primeiro vem os
+10 times da Serie A, depois os 8 da Serie B, e por fim os 2 que so completam a
+liga do jogo (o PES exige 20). A serie de cada um vai no nome do video.
 
 Este arquivo e importado pelos outros scripts, entao a lista fica num lugar so.
 """
 
 import unicodedata
 
-TIMES = [
+SERIE_A = [
     "Botafogo",
-    "Corinthians",
     "Coritiba",
     "Cruzeiro",
     "Flamengo",
     "Fluminense",
     "Grêmio",
-    "Inter",
     "Palmeiras",
     "Santos",
     "São Paulo",
     "Vasco",
 ]
+
+SERIE_B = [
+    "Corinthians",
+    "EC Juventude",
+    "Figueirense",
+    "Inter",
+    "Náutico",
+    "Paraná",
+    "Sport",
+    "Vitória",
+]
+
+# Nao jogam nenhuma das series, mas estao no fim da lista do PES. Ficam aqui
+# para a calibracao fotografar a lista inteira e o reconhecimento nao se
+# confundir se o cursor parar num deles.
+FORA_DAS_SERIES = [
+    "Portuguesa",
+    "Ipatinga",
+]
+
+TIMES = SERIE_A + SERIE_B + FORA_DAS_SERIES
 
 
 def indice_do_time(nome: str) -> int:
@@ -51,6 +75,16 @@ def nome_oficial(nome: str) -> str:
     return TIMES[indice_do_time(nome)]
 
 
+def serie_do_time(nome: str):
+    """'A', 'B', ou None para os times que so completam a liga do PES."""
+    time = nome_oficial(nome)
+    if time in SERIE_A:
+        return "A"
+    if time in SERIE_B:
+        return "B"
+    return None
+
+
 def normalizar(texto: str) -> str:
     """Tira acentos e deixa minusculo: 'São Paulo' -> 'sao paulo'."""
     sem_acento = unicodedata.normalize("NFKD", texto)
@@ -66,4 +100,5 @@ def apelido(nome: str) -> str:
 if __name__ == "__main__":
     print(f"{len(TIMES)} times cadastrados:\n")
     for i, time in enumerate(TIMES):
-        print(f"  [{i:2d}]  {time:14s}  ->  arquivo: {apelido(time)}.png")
+        serie = serie_do_time(time) or "-"
+        print(f"  [{i:2d}]  {time:14s}  serie {serie}  ->  arquivo: {apelido(time)}.png")
