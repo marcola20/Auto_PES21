@@ -45,7 +45,7 @@ Uso:
 # CONFIGURACOES
 # ==========================================================================
 
-PASTA_VIDEOS = r"C:\Users\Marcola\Videos\NVIDIA\eFootball PES 2021"
+from caminhos import PASTA_VIDEOS   # definida em caminhos.ini
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
 
 # Quanto do final do video olhar. No video de referencia a tela "Fim de jogo"

@@ -11,9 +11,8 @@ Ele NAO mexe em menu nenhum do PES ainda. E so um teste do "gatilho".
 # CONFIGURACOES  --  mude so aqui em cima
 # ==========================================================================
 
-# Pasta onde a NVIDIA salva os videos. O "r" antes das aspas faz o Python
-# tratar a \ como barra normal, e nao como caractere especial.
-PASTA_GRAVACOES = r"C:\Users\Marcola\Videos\NVIDIA\eFootball PES 2021"
+# Pasta onde a NVIDIA salva os videos: definida em caminhos.ini.
+from caminhos import PASTA_VIDEOS as PASTA_GRAVACOES
 
 # Extensoes que contam como "video". Em minusculo, com o ponto.
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
@@ -120,7 +119,7 @@ def main() -> int:
     pasta = Path(PASTA_GRAVACOES)
     if not pasta.is_dir():
         print(f"\nERRO: a pasta abaixo nao existe:\n  {pasta}")
-        print("Confira o caminho em PASTA_GRAVACOES, la no topo do script.")
+        print("Confira pasta_videos em caminhos.ini.")
         return 1
 
     print(f"\nPasta monitorada:\n  {pasta}\n")

@@ -16,3 +16,7 @@ print_teste.png
 # estado desta maquina, nao codigo.
 resultados_enviados.json
 resultados_enviados.tmp
+
+# Caminhos deste PC (pasta do PES, dos videos). Cada um tem o seu; o modelo
+# que vai para o GitHub e caminhos.exemplo.ini.
+caminhos.ini

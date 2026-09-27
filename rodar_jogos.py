@@ -21,7 +21,7 @@ CONFLITOS_DE_UNIFORME = {
                 "Figueirense", "Sport", "São Paulo", "Flamengo"],
 }
 
-PASTA_GRAVACOES = r"C:\Users\Marcola\Videos\NVIDIA\eFootball PES 2021"
+from caminhos import PASTA_VIDEOS as PASTA_GRAVACOES   # em caminhos.ini
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
 
 SEGUNDOS_CONTAGEM = 10       # tempo para voltar ao PES no inicio

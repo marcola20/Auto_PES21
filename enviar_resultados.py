@@ -35,7 +35,7 @@ Uso:
 # ==========================================================================
 
 # Mesma pasta do extrair_eventos.py: os .json ficam ao lado dos videos.
-PASTA_VIDEOS = r"C:\Users\Marcola\Videos\NVIDIA\eFootball PES 2021"
+from caminhos import PASTA_VIDEOS   # definida em caminhos.ini
 
 # Onde fica anotado o que ja foi enviado. Fica no projeto, e nao na pasta
 # de videos, para essa pasta continuar tendo so o que a gravacao produz.

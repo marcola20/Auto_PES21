@@ -30,8 +30,9 @@ O PES precisa estar FECHADO (o script nao fecha um jogo aberto por voce).
 # CONFIGURACOES
 # ==========================================================================
 
-PASTA_PES   = r"D:\PES\eFootball PES 2021"
-PASTA_SIDER = r"D:\PES\eFootball PES 2021\PES 2009 Remake"
+# As pastas do PES e do sider ficam em caminhos.ini (cada PC tem o seu).
+from caminhos import PASTA_PES, PASTA_SIDER
+
 PES_EXE     = PASTA_PES + r"\PES2021.exe"
 SIDER_EXE   = PASTA_SIDER + r"\sider.exe"
 SIDER_LOG   = PASTA_SIDER + r"\sider.log"
