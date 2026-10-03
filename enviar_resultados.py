@@ -15,7 +15,10 @@ Como decide o que enviar:
     Corrija o .json na mao (e mude o status para "ok") e rode de novo.
   - O que ja foi enviado fica anotado em ARQUIVO_CONTROLE, junto com um
     hash do conteudo. Se o .json mudar (reextraido ou corrigido), ele e
-    enviado de novo - o site ATUALIZA a partida, nao duplica.
+    enviado de novo - o site ATUALIZA a partida, nao duplica. O reenvio diz
+    ao site qual partida recebeu o envio anterior, para nao cair em outra.
+  - Jogo que se repete em outra competicao (Serie A e Copa): o site escolhe
+    o ainda nao jogado com a data marcada mais perto de agora.
   - Um jogo com erro (partida nao achada, rede fora...) nao para os outros
     e nao e anotado, entao e tentado de novo na proxima vez.
 
@@ -57,6 +60,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -95,11 +99,16 @@ def descrever(dados: dict) -> str:
     return f"{c.get('time')} {c.get('gols')} x {f.get('gols')} {f.get('time')}"
 
 
-def enviar(url: str, token: str, corpo: bytes) -> tuple:
+def enviar(url: str, token: str, corpo: bytes, partida_anterior: str = None) -> tuple:
     """Devolve (ok, resposta_em_dict). Erro HTTP nao e excecao: o site manda
-    a mensagem em {"message": ...} e ela e o que interessa mostrar."""
+    a mensagem em {"message": ...} e ela e o que interessa mostrar.
+
+    partida_anterior: id da partida que recebeu o envio anterior deste .json."""
+    endereco = url.rstrip("/") + CAMINHO_API
+    if partida_anterior:
+        endereco += "?" + urllib.parse.urlencode({"partida": partida_anterior})
     pedido = urllib.request.Request(
-        url.rstrip("/") + CAMINHO_API,
+        endereco,
         data=corpo,
         method="POST",
         headers={"Content-Type": "application/json; charset=utf-8",
@@ -189,7 +198,8 @@ def main() -> int:
 
         print(f"- {nome}")
         try:
-            ok, resposta = enviar(url, token, caminho.read_bytes())
+            ok, resposta = enviar(url, token, caminho.read_bytes(),
+                                  (anotado or {}).get("partida"))
         except Exception as erro:
             # Rede fora, DNS, timeout...: segue para os outros jogos.
             erros.append((nome, f"{type(erro).__name__}: {erro}"))
