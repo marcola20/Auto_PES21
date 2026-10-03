@@ -1039,6 +1039,9 @@ def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
     avisos = Avisos()
     resultado = {
         "video": video.name,
+        # Data do arquivo (renomear nao muda): o site reconhece o mesmo video
+        # num reenvio mesmo que o nome se repita em outro jogo.
+        "gravado_em": datetime.fromtimestamp(video.stat().st_mtime).isoformat(timespec="seconds"),
         "extraido_em": datetime.now().isoformat(timespec="seconds"),
         "serie": None,
         "rodada": rodada_do_nome(video.name),
