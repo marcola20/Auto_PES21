@@ -123,7 +123,7 @@ python rodar_jogos.py
 
 Você tem 10 segundos para clicar na janela do PES. Depois disso **não mexa no
 mouse nem no teclado**. Cada jogo vira um vídeo chamado
-`Casa vs Fora ｜ Série X.mp4` na `pasta_videos`.
+`Casa vs Fora.mp4` na `pasta_videos`.
 
 Se parar no meio, o script diz em qual jogo parou e se o vídeo dele foi salvo.
 Tire da lista `JOGOS` os que já foram e rode de novo.
@@ -139,6 +139,12 @@ cartões, substituições e notas. Se o OCR ficou em dúvida, o `.json` sai com
 `"status": "revisar"` e o motivo em `"avisos"` — corrija na mão e mude para
 `"ok"`.
 
+Os nomes dos jogadores são corrigidos pelo elenco de cada time na base de
+jogadores do PES que o site usa (o OCR lê "Petrbech" em vez de "Petr Čech").
+Para isso, aponte `base_jogadores`, na seção `[site]` do `caminhos.ini`, para o
+arquivo `pes-jogadores.json.gz` do repositório do site (`Fc25_Draft`). Sem ele,
+os nomes ficam como o OCR leu.
+
 | Comando | O que faz |
 |---|---|
 | `python extrair_eventos.py` | todo vídeo que ainda não tem `.json` |
@@ -147,15 +153,17 @@ cartões, substituições e notas. Se o OCR ficou em dúvida, o `.json` sai com
 
 ### 2.4 Enviar para o site da liga
 
-Precisa de duas variáveis de ambiente (peça o token ao admin do site). No
-PowerShell, uma vez só:
+Precisa do endereço e do token do site (peça o token ao admin). Uma vez só,
+preencha a seção `[site]` do `caminhos.ini` — ele fica só neste PC e não vai
+para o GitHub:
 
 ```
-setx CBFV_API_URL "https://cbfv-app.onrender.com"
-setx CBFV_API_TOKEN "seu-token-aqui"
+[site]
+url = https://cbfv-app.onrender.com
+token = seu-token-aqui
 ```
 
-Feche e abra o terminal de novo, e então:
+Depois é só:
 
 ```
 python enviar_resultados.py --simular   # só mostra o que enviaria

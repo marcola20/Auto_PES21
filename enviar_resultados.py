@@ -22,9 +22,12 @@ Como decide o que enviar:
   - Um jogo com erro (partida nao achada, rede fora...) nao para os outros
     e nao e anotado, entao e tentado de novo na proxima vez.
 
-Precisa de duas variaveis de ambiente (nada de token dentro do codigo):
-  CBFV_API_URL    endereco do site, ex.: https://cbfv.exemplo.com
-  CBFV_API_TOKEN  seu token de admin do site
+Precisa do endereco e do token do site, na secao [site] do caminhos.ini
+(fica so neste PC, nao vai para o GitHub; nada de token dentro do codigo):
+  url   = endereco do site, ex.: https://cbfv.exemplo.com
+  token = seu token de admin do site
+As variaveis de ambiente CBFV_API_URL e CBFV_API_TOKEN, se existirem,
+valem mais que o caminhos.ini.
 
 Uso:
   python enviar_resultados.py                -> envia os novos/alterados
@@ -38,6 +41,7 @@ Uso:
 # ==========================================================================
 
 # Mesma pasta do extrair_eventos.py: os .json ficam ao lado dos videos.
+import caminhos
 from caminhos import PASTA_VIDEOS   # definida em caminhos.ini
 
 # Onde fica anotado o que ja foi enviado. Fica no projeto, e nao na pasta
@@ -124,7 +128,7 @@ def enviar(url: str, token: str, corpo: bytes, partida_anterior: str = None) -> 
         except ValueError:
             detalhe = {}
         if erro.code == 401:
-            detalhe["message"] = f"token recusado (confira {VAR_TOKEN})"
+            detalhe["message"] = f"token recusado (confira o 'token' em {caminhos.ARQUIVO.name})"
         elif erro.code == 403:
             detalhe["message"] = "o token nao e de admin"
         detalhe.setdefault("message", f"HTTP {erro.code}: {texto[:200]}")
@@ -152,9 +156,11 @@ def main() -> int:
     else:
         arquivos = listar_jsons(pasta)
 
-    url, token = os.environ.get(VAR_URL), os.environ.get(VAR_TOKEN)
+    url = os.environ.get(VAR_URL) or caminhos.SITE_URL
+    token = os.environ.get(VAR_TOKEN) or caminhos.SITE_TOKEN
     if not args.simular and (not url or not token):
-        print(f"ERRO: defina as variaveis de ambiente {VAR_URL} e {VAR_TOKEN}.")
+        print(f"ERRO: preencha 'url' e 'token' na secao [site] de:\n  {caminhos.ARQUIVO}")
+        print("  E so uma vez: o arquivo fica neste PC e nao vai para o GitHub.")
         print("  (ou rode com --simular para so ver o que seria enviado)")
         return 1
 
@@ -196,10 +202,16 @@ def main() -> int:
             print(f"- {nome}\n    enviaria ({motivo}): {jogo}\n")
             continue
 
+        # Reenvio e o mesmo video (mesma data de gravacao). Video novo com o mesmo nome (o par
+        # se enfrentou de novo, em outra competicao) nao leva a partida anterior: senao o site
+        # regrava o jogo antigo.
+        partida_anterior = (anotado or {}).get("partida")
+        if anotado and anotado.get("gravado_em") != dados.get("gravado_em"):
+            partida_anterior = None
+
         print(f"- {nome}")
         try:
-            ok, resposta = enviar(url, token, caminho.read_bytes(),
-                                  (anotado or {}).get("partida"))
+            ok, resposta = enviar(url, token, caminho.read_bytes(), partida_anterior)
         except Exception as erro:
             # Rede fora, DNS, timeout...: segue para os outros jogos.
             erros.append((nome, f"{type(erro).__name__}: {erro}"))
@@ -231,6 +243,7 @@ def main() -> int:
             "hash": hash_atual,
             "enviado_em": datetime.now().isoformat(timespec="seconds"),
             "partida": resposta.get("partidaId"),
+            "gravado_em": dados.get("gravado_em"),
             "jogo": jogo,
         }
         # Anota a cada jogo: se cair no meio, os ja enviados nao vao de novo.
