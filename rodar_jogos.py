@@ -2,16 +2,8 @@
 # CONFIGURACOES
 # ==========================================================================
 
-# A lista de partidas: (time da casa, time de fora).
-# Os nomes precisam existir em times.py. Acento e maiuscula sao opcionais.
-#
-# Jogo que NAO e da liga ganha um terceiro item com o nome da competicao, que
-# vai para o nome do video no lugar da serie: ("Santos", "Cruzeiro", "Supercopa")
-# -> "Santos vs Cruzeiro ｜ Supercopa.mp4". Importa porque o site da liga
-# descobre a competicao pelo nome do video: sem isso, uma final da Supercopa
-# entre dois times da Serie A seria procurada na Serie A.
 JOGOS = [
-    ("Santos", "Cruzeiro", "Supercopa"),
+    ("Fluminense", "Gremio")
 ]
 
 CONFLITOS_DE_UNIFORME = {
@@ -35,10 +27,6 @@ SEGUNDOS_LIMITE_FORMACAO = 180
 SEGUNDOS_APOS_PARAR      = 8    # espera a NVIDIA fechar o arquivo
 SEGUNDOS_BUSCA_EXTRA     = 25   # procura o video novo por mais esse tempo
 
-# O Windows nao aceita "|" em nome de arquivo. Esta e a barra "cheia" (U+FF5C),
-# que e permitida e na tela fica igual: "Corinthians vs Vitória ｜ Série B".
-SEPARADOR_SERIE = " ｜ "
-
 TENTATIVAS_RENOMEAR                = 10
 SEGUNDOS_ENTRE_TENTATIVAS_RENOMEAR = 3
 
@@ -47,33 +35,18 @@ PAUSA_APOS_PAINEL      = 2.5    # espera depois de confirmar um painel do jogo
 PAUSA_MENU_UNIFORME    = 0.8    # entre as teclas dentro da tela "Uniforme"
 PAUSA_APOS_REPLAY      = 1.2    # espera depois de pular um replay (troca rapido)
 
-# Quanto tempo um replay precisa ficar na tela antes de o script mexer nele.
-#
-# Isto existe para NAO tocar no replay de gol durante a partida. Naquele
-# contexto o Enter nao avanca o replay: ele ABRE o editor de replay do PES
-# (aquele com "Salvar replay" e controles de reproducao), e o jogo trava ali.
-#
-# A distincao e a mesma que ja uso no fim de jogo: replay de gol termina
-# sozinho em poucos segundos, enquanto os melhores momentos do final ficam
-# esperando input para sempre. Se o script so age depois de o replay
-# PERSISTIR, ele nunca encosta no replay de gol.
-# Medido na pratica: um replay de gol ja passou de 25s na tela e o script
-# encostou nele, abrindo o editor. 50s da folga sem tornar o fim de partida
-# lento demais. Se acontecer de novo, aumente - o custo de errar para cima e
-# so alguns segundos a mais de video no final.
 SEGUNDOS_ESPERAR_REPLAY = 50
 
-# Se a tela ficar PARADA por este tempo durante a partida, algo deu errado.
-# Uma partida rodando nunca congela: ou a bola se mexe, ou a torcida, ou o
-# relogio. Tela imovel por um minuto significa que o jogo esta esperando algo
-# que o script nao sabe que precisa fazer.
+
 SEGUNDOS_TELA_PARADA = 60
 PASTA_DIAGNOSTICO = "diagnostico_travou"
 
-# Antes de parar a gravacao, mostrar a aba de EVENTOS DA PARTIDA no video.
-# So funciona depois de TECLA_R1 estar definida em teclado.py; enquanto for
-# None, o script pula esta etapa inteira.
 VEZES_R1 = 2                     # quantas abas avancar a partir da inicial
+PAUSA_R1 = 2.0                   # entre um R1 e outro: a aba do meio
+                                 # (Estatisticas) precisa ficar parada no
+                                 # video para o extrair_eventos.py ler. Com
+                                 # 0.6s ela as vezes nem era desenhada (video
+                                 # Botafogo x Palmeiras: Pontuacao -> Eventos)
 VEZES_BAIXO_NOS_EVENTOS = 10     # rolar a lista de eventos ate o fim
 PAUSA_BAIXO_NOS_EVENTOS = 1.0    # entre um Baixo e outro: devagar, para o
                                  # video mostrar a lista inteira, e nao so o
@@ -161,25 +134,18 @@ def esperar_arquivo_estabilizar(caminho: Path, tentativas: int = 15) -> bool:
     return False
 
 
-def renomear_video(caminho: Path, casa: str, fora: str, competicao: str = None):
+def renomear_video(caminho: Path, casa: str, fora: str):
     """Troca o nome que a NVIDIA deu ao video pelo nome do jogo.
 
     'eFootball PES 2021 2026.09.16 - 11.07.14.13.mp4'
-        -> 'Corinthians vs Vitória ｜ Série B.mp4'
+        -> 'Corinthians vs Vitória.mp4'
 
-    A serie so entra quando os dois times sao da mesma: um jogo A x B (ou com
-    um time que so completa a liga) nao e de serie nenhuma. Se o jogo for de
-    outra competicao (ex. "Supercopa"), ela entra no lugar da serie.
+    So o jogo: a competicao e a rodada quem poe e o envio ao site.
 
     Devolve o caminho novo, ou None se nao conseguiu. NUNCA levanta erro: o
     video ja esta salvo, e um nome feio nao pode derrubar o loop.
     """
     base = f"{times.nome_oficial(casa)} vs {times.nome_oficial(fora)}"
-    serie = times.serie_do_time(casa)
-    if competicao:
-        base += f"{SEPARADOR_SERIE}{competicao}"
-    elif serie and serie == times.serie_do_time(fora):
-        base += f"{SEPARADOR_SERIE}Série {serie}"
 
     # Mesmo jogo gravado de novo: nao sobrescreve, numera.
     destino = caminho.with_name(base + caminho.suffix)
@@ -674,7 +640,7 @@ def mostrar_eventos_da_partida() -> bool:
         detalhe("AVISO - nao achei o titulo da aba, pulando o resumo")
         return False
 
-    teclado.apertar(teclado.TECLA_R1, VEZES_R1, pausa=0.6)
+    teclado.apertar(teclado.TECLA_R1, VEZES_R1, pausa=PAUSA_R1)
     time.sleep(1.0)
 
     depois = visao.ler_titulo_da_aba()
@@ -725,7 +691,7 @@ def voltar_para_selecao() -> bool:
 
 
 def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
-                  pasta: Path, competicao: str = None) -> tuple:
+                  pasta: Path) -> tuple:
     """Roda uma partida. Devolve (seguiu_tudo_bem, gravou_o_video).
 
     Sao DUAS informacoes porque elas falham separado: a partida pode ter sido
@@ -767,7 +733,7 @@ def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
     detalhe(f"OK - {novo.name}  ({tamanho:.0f} MB)")
     # Daqui para baixo o video ja esta salvo: o que falhar agora nao apaga isso.
 
-    renomeado = renomear_video(novo, casa, fora, competicao)
+    renomeado = renomear_video(novo, casa, fora)
     if renomeado is not None:
         detalhe(f"Renomeado para: {renomeado.name}")
 
@@ -846,9 +812,8 @@ def main() -> int:
         contagem_regressiva(SEGUNDOS_CONTAGEM)
 
     gravados = 0
-    for i, (casa, fora, competicao) in enumerate(jogos_da_fila(), 1):
-        seguiu, gravou = rodar_um_jogo(casa, fora, i, len(JOGOS), pasta,
-                                       competicao)
+    for i, (casa, fora, _competicao) in enumerate(jogos_da_fila(), 1):
+        seguiu, gravou = rodar_um_jogo(casa, fora, i, len(JOGOS), pasta)
         if gravou:
             gravados += 1
 

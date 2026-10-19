@@ -23,7 +23,9 @@ Como funciona:
   5. Os icones da linha do tempo sao reconhecidos pela COR (bola branca,
      triangulo azul/verde/vermelho, cartao).
   6. Monta os eventos (pareia substituicoes, liga assistencia ao gol),
-     normaliza os times com times.py e confere: gols nos eventos TEM que
+     normaliza os times com times.py, troca cada nome de jogador pelo do
+     elenco do time na base do PES do site (o OCR erra letra que nao existe
+     em portugues: "Č", "ć", "ń") e confere: gols nos eventos TEM que
      bater com o placar. Se algo nao bate ou ficou ilegivel, o .json sai com
      "status": "revisar" e o motivo em "avisos". Nada e inventado: campo
      ilegivel ou empatado na votacao vira null.
@@ -45,8 +47,19 @@ Uso:
 # CONFIGURACOES
 # ==========================================================================
 
-from caminhos import PASTA_VIDEOS   # definida em caminhos.ini
+from caminhos import PASTA_VIDEOS, BASE_JOGADORES   # definidas em caminhos.ini
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
+
+# Correcao dos nomes pelo elenco (base_jogadores no caminhos.ini). O OCR em
+# portugues nao conhece letras como "Č" e "ć" e troca por outra ("Petr Čech"
+# saia "Petrbech", "Vidić" saia "Vidié"). O nome lido vira o do elenco do
+# time mais parecido com ele. Medido nos 5 primeiros jogos: nome errado
+# fica a 0.88-0.93 do certo, e o 2o mais parecido no maximo a 0.46.
+SEMELHANCA_MINIMA_NOME = 0.75
+FOLGA_MINIMA_NOME = 0.15      # do mais parecido para o 2o: senao, na duvida, nao troca
+# Time do times.py com outro nome na base, quando o "comeca igual" de
+# elenco_do_time nao resolve sozinho ("Sport" tambem casa com Sporting CP...).
+NOME_NA_BASE = {"Sport": "Sport Recife"}
 
 # Quanto do final do video olhar. No video de referencia a tela "Fim de jogo"
 # com os botoes ocupa so os ultimos ~15s (antes disso vem o replay dos
@@ -113,17 +126,35 @@ FAIXA_Y_TITULO_ABA = (175, 205)           # "Eventos da partida" etc.
 # Aba de estatisticas: valores ao lado de cada rotulo (rotulo no centro).
 X_VALOR_CASA = (60, 225)
 X_VALOR_FORA = (545, 715)
+# Mancha de texto menor que isto (px) nos valores e sujeira do estadio, nao
+# algarismo (ver sem_pontos_soltos).
+MANCHA_MINIMA_ESTATISTICA = 8
 
 # Aba de notas: colunas de cada lado (numero, inicio do nome, nota, estrela).
 NOTAS_X_NUMERO = {"casa": (26, 66), "fora": (408, 450)}
 NOTAS_X_INICIO_NOME = {"casa": (25, 100), "fora": (410, 475)}
 NOTAS_X_NOTA = {"casa": (282, 334), "fora": (664, 716)}
 NOTAS_X_ESTRELA = {"casa": (334, 362), "fora": (708, 740)}
+# Quem entrou no fim fica com "-" no lugar da nota. O OCR nao le o traco, mas
+# ele e baixo: recortado justo da 6 px de altura, um algarismo da 17.
+ALTURA_MAXIMA_TRACO = 9
 
 # Aba de eventos: area visivel da lista (abaixo do titulo da aba) e onde fica
 # o icone de cada lado, em relacao a CENTRO_X.
 EVENTOS_Y_VISIVEL = (212, 516)
 ICONE_DX = {"casa": (-82, -56), "fora": (54, 82)}
+# O nome do evento encosta no icone: a casa termina em x ~283-298 e a fora
+# comeca em ~467-482 (5 jogos medidos). Texto cuja borda do lado do icone
+# fica mais longe do centro que isto e letreiro do estadio atras do painel
+# ("BRASILEIRAO" lido como "eirao" em x 524-539, Coritiba x Flamengo) ou o
+# pedaco de fora de um nome partido pelo OCR ("Juan Roman" | "Riquelme").
+NOME_DX_MAX = 115
+# Recorte do minuto dentro da bolha, relativo ao centro dela. O anel fica a
+# +-20 px do centro e "90+4'" ocupa -15..+15; o recorte antigo (+-13) comia o
+# "9", que virava "7" ("70+4"), e "45+3" nem era lido. Na vertical o texto
+# vai de -2.5 a +5.5 do centro achado; o anel nao entra nesta faixa.
+MINUTO_DX = (-17, 18)
+MINUTO_DY = (-4, 7)
 DISTANCIA_MAX_BOLHA = 45      # texto mais longe que isto de uma bolha: orfao
 # Um evento de verdade e lido muitas vezes (varios quadros, varias passadas
 # do OCR, varias telas): no video da Supercopa, 20 a 80 leituras cada. Um
@@ -136,6 +167,10 @@ LEITURAS_MINIMAS_EVENTO = 3
 #   assistencia = azul (0,90,180)   gol = bola branca
 #   melhor em campo = estrela ciano (0,130,150): g ~ b, diferente do azul
 PIXELS_MINIMOS_ICONE = 12
+# A estrela e um disco cheio de ~18x18 px: ~200 pixels ciano em 5 videos. A
+# placa azul da Unimed atras da linha (Felipe, Inter x Sport) dava 14 e
+# virava um segundo melhor em campo.
+PIXELS_MINIMOS_ESTRELA = 80
 
 PASTA_DIAGNOSTICO = "diagnostico_eventos"
 
@@ -143,7 +178,9 @@ PASTA_DIAGNOSTICO = "diagnostico_eventos"
 
 import argparse
 import asyncio
+import gzip
 import json
+import unicodedata
 import re
 import statistics
 import subprocess
@@ -300,6 +337,7 @@ class Caixa:
 @dataclass
 class Linha(Caixa):
     palavras: list = field(default_factory=list)
+    binaria: bool = False      # lida na imagem binarizada (posicao confiavel)
 
 
 def binarizar(img: Image.Image) -> Image.Image:
@@ -368,7 +406,9 @@ def ler_linhas(ocr: OCR, painel: Image.Image) -> list:
         img = ampliar(painel, escala)
         if binario:
             img = binarizar(img)
-        linhas.extend(ocr.ler(img, escala))
+        for ln in ocr.ler(img, escala):
+            ln.binaria = binario
+            linhas.append(ln)
     return linhas
 
 
@@ -380,6 +420,40 @@ def justo(img: Image.Image, margem: int = 2):
     x0, y0, x1, y1 = caixa
     return img.crop((max(0, x0 - margem), max(0, y0 - margem),
                      min(img.width, x1 + margem), min(img.height, y1 + margem)))
+
+
+def sem_pontos_soltos(img: Image.Image, minimo: int) -> Image.Image:
+    """Apaga manchas de texto menores que `minimo` pixels (8-vizinhanca).
+
+    Uma placa clara do estadio atras do painel deixa pontinhos brancos que a
+    binarizacao nao tira. Grudado no "8" de "81 (68)", um ponto de 5 px fez
+    o OCR perder o "(68)" em todas as leituras. Algarismo, "(" e "%" tem 12+
+    px; o ponto decimal da nota tem 3 - por isso isto NAO serve para notas.
+    """
+    img = img.copy()
+    bw = binarizar(img).load()
+    px = img.load()
+    w, h = img.size
+    vistos = set()
+    for y in range(h):
+        for x in range(w):
+            if bw[x, y] != 0 or (x, y) in vistos:
+                continue
+            mancha, pilha = [], [(x, y)]
+            vistos.add((x, y))
+            while pilha:
+                a, b = pilha.pop()
+                mancha.append((a, b))
+                for na in (a - 1, a, a + 1):
+                    for nb in (b - 1, b, b + 1):
+                        if 0 <= na < w and 0 <= nb < h and (na, nb) not in vistos \
+                                and bw[na, nb] == 0:
+                            vistos.add((na, nb))
+                            pilha.append((na, nb))
+            if len(mancha) < minimo:
+                for p in mancha:
+                    px[p] = (0, 0, 0)
+    return img
 
 
 def ler_pecas(ocr: OCR, pecas: list, separador: Image.Image) -> list:
@@ -539,6 +613,10 @@ def chave_nome(nome):
     return times.normalizar(nome).replace(" ", "")
 
 
+# Letras finas que o OCR confunde entre si em nome (chave ja minuscula).
+TROCAS_LETRA = str.maketrans({"j": "i", "l": "i", "1": "i", "0": "o"})
+
+
 def votar_nome(candidatos):
     """Vota pela grafia sem acento/espaco; dentro da vencedora, a grafia mais
     lida, e no empate a com mais acentos (o OCR perde acento, nao inventa)."""
@@ -614,6 +692,29 @@ CAMPOS_ESTATISTICAS = ["posse", "chutes", "chutes_a_gol", "faltas", "impedimento
                        "cruzamentos", "interceptacoes", "desarmes", "defesas"]
 
 
+def metades_do_par(peca: Image.Image):
+    """'0 (0)' -> recortes '0' e '(0)', cortando no maior vao entre colunas
+    com texto (o espaco antes do parentese). O OCR do Windows descarta o
+    "0 (0)" inteiro mesmo na grade, mas le as duas metades."""
+    img = justo(peca)
+    if img is None:
+        return None
+    bw = binarizar(img).load()
+    com_texto = [any(bw[x, y] == 0 for y in range(img.height)) for x in range(img.width)]
+    vaos, inicio = [], None
+    for x, tem in enumerate(com_texto):
+        if not tem and inicio is None:
+            inicio = x
+        elif tem and inicio is not None:
+            vaos.append((x - inicio, inicio, x))
+            inicio = None
+    vaos = [v for v in vaos if v[1] > 0]       # margem da esquerda nao e vao
+    if not vaos:
+        return None
+    _, x0, x1 = max(vaos)
+    return img.crop((0, 0, x0, img.height)), img.crop((x1, 0, img.width, img.height))
+
+
 def ler_estatisticas(ocr, telas, avisos: Avisos):
     votos = {(c, l): [] for c in CAMPOS_ESTATISTICAS for l in ("casa", "fora")}
     for tela in telas:
@@ -631,12 +732,20 @@ def ler_estatisticas(ocr, telas, avisos: Avisos):
             ys = [statistics.median(alturas[c]) for c in campos]
             pecas = []
             for y in ys:
-                pecas.append(painel.crop((X_VALOR_CASA[0], round(y - 12), X_VALOR_CASA[1], round(y + 12))))
-                pecas.append(painel.crop((X_VALOR_FORA[0], round(y - 12), X_VALOR_FORA[1], round(y + 12))))
-            lidos = ler_pecas(ocr, pecas, painel.crop(CAIXA_TITULO_FIM))
+                for x0, x1 in (X_VALOR_CASA, X_VALOR_FORA):
+                    pecas.append(sem_pontos_soltos(
+                        painel.crop((x0, round(y - 12), x1, round(y + 12))), MANCHA_MINIMA_ESTATISTICA))
+            separador = painel.crop(CAIXA_TITULO_FIM)
+            lidos = ler_pecas(ocr, pecas, separador)
             for i, campo in enumerate(campos):
                 for j, lado in enumerate(("casa", "fora")):
-                    for texto in lidos[2 * i + j]:
+                    textos = lidos[2 * i + j]
+                    if campo in PARES_ESTATISTICAS and not any(ler_par(t) for t in textos):
+                        metades = metades_do_par(pecas[2 * i + j])
+                        if metades:
+                            esq, dir_ = ler_pecas(ocr, list(metades), separador)
+                            textos = [f"{a} {b}" for a, b in zip(esq, dir_)]
+                    for texto in textos:
                         if campo in PARES_ESTATISTICAS:
                             par = ler_par(texto)
                             if par:
@@ -650,11 +759,18 @@ def ler_estatisticas(ocr, telas, avisos: Avisos):
     est = {}
     for campo in CAMPOS_ESTATISTICAS:
         est[campo] = {}
+        problemas = {}
         for lado in ("casa", "fora"):
-            valor, problema = votar(votos[(campo, lado)])
+            est[campo][lado], problemas[lado] = votar(votos[(campo, lado)])
+        # Posse soma sempre 100%: um lado ilegivel sai do outro, sem chute.
+        if campo == "posse":
+            for lado, outro in (("casa", "fora"), ("fora", "casa")):
+                if est[campo][lado] is None and est[campo][outro] is not None:
+                    est[campo][lado] = 100 - est[campo][outro]
+                    problemas[lado] = None
+        for lado, problema in problemas.items():
             if problema:
                 avisos.add(f"estatistica {campo} ({lado}): {problema}")
-            est[campo][lado] = valor
     return est
 
 
@@ -692,25 +808,54 @@ def ler_notas(ocr, telas, avisos: Avisos):
             for grupo in agrupar([ln.cy for ln in candidatas], 8):
                 y = statistics.median(grupo)
                 nomes = [ln.texto for ln in candidatas if abs(ln.cy - y) <= 8]
-                numeros, notas, estrelas = [], [], 0
+                numeros, notas, estrelas, tracos = [], [], 0, 0
                 for _, painel in tela.quadros:
                     xn, xo, xe = NOTAS_X_NUMERO[lado], NOTAS_X_NOTA[lado], NOTAS_X_ESTRELA[lado]
+                    recorte_nota = painel.crop((xo[0], round(y - 12), xo[1], round(y + 12)))
                     lidos = ler_pecas(ocr, [painel.crop((xn[0], round(y - 12), xn[1], round(y + 12))),
-                                            painel.crop((xo[0], round(y - 12), xo[1], round(y + 12)))],
+                                            recorte_nota],
                                       painel.crop(CAIXA_TITULO_FIM))
                     numeros += [ler_inteiro(t) for t in lidos[0]]
                     notas += [ler_nota(t) for t in lidos[1]]
+                    nota_justa = justo(recorte_nota)
+                    tracos += nota_justa is not None and nota_justa.height <= ALTURA_MAXIMA_TRACO
                     ciano = contar_pixels(painel, (xe[0], y - 10, xe[1], y + 10), eh_ciano)
-                    estrelas += len(ciano) >= PIXELS_MINIMOS_ICONE
+                    estrelas += len(ciano) >= PIXELS_MINIMOS_ESTRELA
                 nome, _ = votar_nome(nomes)
+                if nome is None:
+                    # Nome curto sozinho ("Pepe") o OCR do painel inteiro nao
+                    # le; colado entre os "Fim de jogo" da grade, le.
+                    x0, x1 = NOTAS_X_NUMERO[lado][1], NOTAS_X_NOTA[lado][0]
+                    for _, painel in tela.quadros:
+                        nomes += ler_pecas(ocr, [painel.crop((x0, round(y - 12), x1, round(y + 12)))],
+                                           painel.crop(CAIXA_TITULO_FIM))[0]
+                    nome, _ = votar_nome(nomes)
                 chave = chave_nome(nome) if nome else f"?{tela.quadros[0][0]}:{y:.0f}"
                 j = jogadores[lado].setdefault(chave, {"nomes": [], "numeros": [], "notas": [],
-                                                       "estrela": 0, "quadros": 0})
+                                                       "estrela": 0, "tracos": 0, "quadros": 0})
                 j["nomes"] += nomes
                 j["numeros"] += numeros
                 j["notas"] += notas
                 j["estrela"] += estrelas
+                j["tracos"] += tracos
                 j["quadros"] += len(tela.quadros)
+
+    # Linha cujo nome empatou numa tela ("Elano ou Etano", "Pepe" curto) vira
+    # um jogador "?" a parte, e o mesmo jogador saia duas vezes. A camisa nao
+    # se repete no time: "?" com o numero de um jogador com nome e ele.
+    for lado in ("casa", "fora"):
+        por_numero = {}
+        for chave, j in jogadores[lado].items():
+            numero, _ = votar(j["numeros"])
+            if not chave.startswith("?") and numero is not None:
+                por_numero.setdefault(numero, chave)
+        for chave in [c for c in jogadores[lado] if c.startswith("?")]:
+            numero, _ = votar(jogadores[lado][chave]["numeros"])
+            if numero in por_numero:
+                sem_nome = jogadores[lado].pop(chave)
+                dono = jogadores[lado][por_numero[numero]]
+                for campo in ("nomes", "numeros", "notas", "estrela", "tracos", "quadros"):
+                    dono[campo] += sem_nome[campo]
 
     notas = {"casa": [], "fora": []}
     for lado in ("casa", "fora"):
@@ -718,6 +863,8 @@ def ler_notas(ocr, telas, avisos: Avisos):
             nome, p_nome = votar_nome(j["nomes"])
             numero, p_num = votar(j["numeros"])
             nota, p_nota = votar(j["notas"])
+            if nota is None and j["tracos"] * 2 > j["quadros"]:
+                p_nota = None     # "-": entrou no fim, o jogo nao deu nota
             for campo, problema in (("nome", p_nome), ("numero", p_num), ("nota", p_nota)):
                 if problema:
                     avisos.add(f"notas ({lado}), jogador {nome or '?'}: {campo} {problema}")
@@ -770,6 +917,20 @@ def classificar_icone(painel, lado, y):
     return nome
 
 
+def altura_do_icone(painel, lado, cy):
+    """Centro (y) do icone ao lado de uma linha cuja altura veio torta, ou
+    None se nao ha icone perto. Busca so +-12 px: o icone da linha vizinha
+    (24 px abaixo ou acima, na mesma bolha) nao entra."""
+    dx0, dx1 = ICONE_DX[lado]
+    topo = round(cy) - 12
+    caixa = (CENTRO_X + dx0, topo, CENTRO_X + dx1, round(cy) + 12)
+    pontos = max((contar_pixels(painel, caixa, teste) for teste in
+                  (eh_verde, eh_vermelho, eh_azul, eh_amarelo, eh_branco)), key=len)
+    if len(pontos) < PIXELS_MINIMOS_ICONE:
+        return None
+    return topo + statistics.median(y for _, y in pontos)
+
+
 def achar_bolhas(painel):
     """Centros (y) das bolhas de minuto na linha do tempo.
 
@@ -809,14 +970,60 @@ def ordem_do_minuto(minuto):
     return (int(base), int(extra or 0))
 
 
+def repeticoes_acima(bolhas, marcadores):
+    """Para cada bolha (y, minuto), a posicao dela entre as bolhas do MESMO
+    minuto - (periodo, n) - ou None se esta tela nao deixa saber.
+
+    Pode haver duas bolhas 70' do mesmo lado (gol e, noutro lance, troca).
+    Como os minutos so crescem, bolhas iguais ficam juntas: basta contar as
+    iguais logo acima na tela. A conta so vale se a tela mostra onde a
+    sequencia comeca - uma bolha de outro minuto, ou um marcador ("Inicio",
+    "Intervalo"), acima dela. Se a sequencia encosta no topo da tela, pode
+    haver mais iguais escondidas acima; outra tela, mais rolada, mostra.
+
+    Marcador entre duas bolhas iguais tambem separa as sequencias: a troca
+    feita no intervalo sai como 45', igual ao gol dos 45' do 1o tempo, com
+    "Intervalo" entre as duas. Contadas juntas, a troca era a 2a bolha 45'
+    numa tela e a 1a noutra (onde o gol ja tinha rolado para fora), e saia
+    duplicada (Botafogo x Flamengo). Por isso o periodo: 1 = sequencia que
+    comeca no "Intervalo", 0 = qualquer outra.
+
+    marcadores: [(y, texto normalizado)].
+    """
+    def marcador_entre(cima, baixo):
+        entre = [(y, nome) for y, nome in marcadores if cima < y < baixo]
+        return max(entre)[1] if entre else None    # o mais perto da bolha de baixo
+
+    resultado = []
+    for i, (y, minuto) in enumerate(bolhas):
+        if minuto is None:
+            resultado.append(None)
+            continue
+        j = i - 1
+        while (j >= 0 and bolhas[j][1] == minuto
+               and marcador_entre(bolhas[j][0], bolhas[j + 1][0]) is None):
+            j -= 1
+        topo = bolhas[j + 1][0]
+        limite = bolhas[j][0] if j >= 0 else float("-inf")
+        marcador = marcador_entre(limite, topo)
+        if marcador is None and not (j >= 0 and bolhas[j][1] is not None):
+            resultado.append(None)
+            continue
+        resultado.append((1 if marcador == "intervalo" else 0, i - j - 1))
+    return resultado
+
+
 def ler_eventos(ocr, telas, avisos: Avisos):
     """Itens da linha do tempo, em ordem: (minuto, lado, icone, jogador).
 
     A lista rola entre telas, e o mesmo evento aparece em varias delas. Cada
     evento e identificado pelo que ele E, nao por onde esta na tela:
-        (minuto da bolha, lado, posicao da linha em relacao a bolha)
-    Ex.: "Diego Ribas" e a 1a linha a esquerda da bolha 76'. Em qualquer tela
-    em que ele apareca, a chave e a mesma, e as leituras dele votam juntas.
+        (minuto da bolha, qual bolha desse minuto, lado,
+         posicao da linha em relacao a bolha)
+    Ex.: "Diego Ribas" e a 1a linha a esquerda da (1a) bolha 76'. Em qualquer
+    tela em que ele apareca, a chave e a mesma, e as leituras dele votam
+    juntas. Sem o "qual bolha", duas bolhas 70' do mesmo lado se fundiam e um
+    dos eventos sumia (ver repeticoes_acima).
 
     Antes a juncao era geometrica: medir quanto a lista rolou entre uma tela
     e outra. Nao funciona - as bolhas sao iguais e igualmente espacadas, entao
@@ -824,16 +1031,21 @@ def ler_eventos(ocr, telas, avisos: Avisos):
     Resultado: eventos de telas diferentes caiam na bolha errada, duplicados.
     """
     y_min, y_max = EVENTOS_Y_VISIVEL
-    observacoes = defaultdict(list)    # (minuto, lado, dy) -> [(nome, icone)]
+    observacoes = defaultdict(list)    # (minuto, n, lado, dy) -> [(nome, icone)]
     sem_minuto = set()                 # nomes vistos ao lado de bolha ilegivel
+    sem_ordem = defaultdict(set)       # nome visto so em bolha de ordem incerta -> {(minuto, lado)}
+    bolhas_vistas = set()              # (minuto, (periodo, qual bolha desse minuto))
 
     for tela in telas:
         # Dentro de UMA tela a posicao e confiavel (a tela esta parada):
         # junta as bolhas dos quadros dela e vota o minuto de cada uma.
         lidas = []                     # (y, minuto)
+        ys_por_quadro = []
         for _, painel in tela.quadros:
             ys = achar_bolhas(painel)
-            textos = ler_pecas(ocr, [painel.crop((CENTRO_X - 13, round(y - 7), CENTRO_X + 13, round(y + 7)))
+            ys_por_quadro.append(ys)
+            textos = ler_pecas(ocr, [painel.crop((CENTRO_X + MINUTO_DX[0], round(y + MINUTO_DY[0]),
+                                                  CENTRO_X + MINUTO_DX[1], round(y + MINUTO_DY[1])))
                                      for y in ys], painel.crop(CAIXA_TITULO_FIM))
             lidas += [(y, ler_minuto(t)) for y, ts in zip(ys, textos) for t in ts]
         bolhas = []                    # (y, minuto)
@@ -841,41 +1053,81 @@ def ler_eventos(ocr, telas, avisos: Avisos):
             y = statistics.median(grupo)
             minuto, _ = votar([m for yy, m in lidas if abs(yy - y) <= 8])
             bolhas.append((y, minuto))
+        marcadores = [(ln.cy, normalizado(ln.texto)) for linhas in tela.linhas for ln in linhas
+                      if normalizado(ln.texto) in MARCADORES]
+        repeticoes = repeticoes_acima(bolhas, marcadores)
+        bolhas_vistas |= {(m, n) for (_, m), n in zip(bolhas, repeticoes) if m and n is not None}
 
-        for (_, painel), linhas in zip(tela.quadros, tela.linhas):
+        for (_, painel), linhas, ys in zip(tela.quadros, tela.linhas, ys_por_quadro):
+            def lado_da(ln):
+                if CENTRO_X - NOME_DX_MAX <= ln.x1 < CENTRO_X - 30:
+                    return "casa"
+                if CENTRO_X + 30 < ln.x0 <= CENTRO_X + NOME_DX_MAX:
+                    return "fora"
+                return None
+            confiaveis = [ln for ln in linhas if ln.binaria and lado_da(ln)]
             for ln in linhas:
+                lado = lado_da(ln)
+                if lado is None or normalizado(ln.texto) in MARCADORES:
+                    continue
+                cy = ln.cy
+                if not ln.binaria:
+                    # A passada na imagem original acerta acentos, mas a
+                    # ALTURA que ela da para a linha sai torta (ate ~13 px, o
+                    # estadio atras confunde o OCR). Isso partia um evento
+                    # em dois (David Villa aos 62' saia duplicado). Usa a
+                    # altura da mesma linha lida numa passada binarizada.
+                    mesma = [c for c in confiaveis if lado_da(c) == lado and abs(c.cy - cy) <= 20]
+                    mesma = max(mesma, default=None, key=lambda c: SequenceMatcher(
+                        None, normalizado(c.texto), normalizado(ln.texto)).ratio())
+                    if mesma is not None and SequenceMatcher(
+                            None, normalizado(mesma.texto), normalizado(ln.texto)).ratio() >= 0.5:
+                        cy = mesma.cy
+                    else:
+                        # Nome curto em cima do estadio movimentado ("Felipe"
+                        # e o cartao aos 90+2', Inter x Sport): a passada
+                        # binarizada nao le nada, e o evento sumia calado.
+                        # A altura do icone ao lado tambem e confiavel. Mas
+                        # so vale icone sem dono: letreiro do estadio lido
+                        # perto de um evento ("Unimed", "Banrisul") acharia o
+                        # icone DESSE evento e votaria no nome dele.
+                        cy = altura_do_icone(painel, lado, cy)
+                        if cy is None or any(lado_da(c) == lado and abs(c.cy - cy) <= 12
+                                             for c in confiaveis):
+                            continue
                 # Texto cortado na borda da area visivel nao conta: ele
                 # aparece inteiro em outra tela.
-                if not (y_min + 8 <= ln.cy <= y_max - 8) or normalizado(ln.texto) in MARCADORES:
+                if not (y_min + 8 <= cy <= y_max - 8):
                     continue
-                if ln.x1 < CENTRO_X - 30:
-                    lado = "casa"
-                elif ln.x0 > CENTRO_X + 30:
-                    lado = "fora"
-                else:
-                    continue
-                icone = classificar_icone(painel, lado, ln.cy)
+                icone = classificar_icone(painel, lado, cy)
                 if icone is None:
                     continue
-                if not bolhas:
+                if not ys or not bolhas:
                     continue
-                y_bolha, minuto = min(bolhas, key=lambda b: abs(b[0] - ln.cy))
+                # Distancia texto -> bolha medida no mesmo quadro.
+                y_bolha = min(ys, key=lambda y: abs(y - cy))
                 # Bolha longe: a dele esta fora da tela (cortada na borda).
                 # Nesta tela nao da para saber o minuto; outra tela mostra.
-                if abs(y_bolha - ln.cy) > DISTANCIA_MAX_BOLHA:
+                if abs(y_bolha - cy) > DISTANCIA_MAX_BOLHA:
                     continue
+                i = min(range(len(bolhas)), key=lambda k: abs(bolhas[k][0] - y_bolha))
+                minuto = bolhas[i][1]
+                chave = chave_nome(limpar_nome(ln.texto) or ln.texto)
                 if minuto is None:
-                    sem_minuto.add(chave_nome(ln.texto))
+                    sem_minuto.add(chave)
                     continue
-                observacoes[(minuto, lado, ln.cy - y_bolha)].append((ln.texto, icone))
+                if repeticoes[i] is None:
+                    sem_ordem[chave].add((minuto, lado))
+                    continue
+                observacoes[(minuto, repeticoes[i], lado, cy - y_bolha)].append((ln.texto, icone))
 
     # A posicao em relacao a bolha varia 1-2 px entre telas (rolagem para no
-    # meio de pixel): agrupa por minuto+lado e junta as posicoes proximas.
+    # meio de pixel): agrupa por bolha+lado e junta as posicoes proximas.
     itens = []
     por_bolha = defaultdict(list)
-    for (minuto, lado, dy), obs in observacoes.items():
-        por_bolha[(minuto, lado)].append((dy, obs))
-    for (minuto, lado), linhas in por_bolha.items():
+    for (minuto, n, lado, dy), obs in observacoes.items():
+        por_bolha[(minuto, n, lado)].append((dy, obs))
+    for (minuto, n, lado), linhas in por_bolha.items():
         for grupo in agrupar([dy for dy, _ in linhas], 6):
             dy = statistics.median(grupo)
             obs = [o for d, os_ in linhas if abs(d - dy) <= 6 for o in os_]
@@ -888,14 +1140,60 @@ def ler_eventos(ocr, telas, avisos: Avisos):
             if p_icone:
                 avisos.add(f"icone do evento de {nome} aos {minuto}' ({lado}): {p_icone}")
                 icone = "desconhecido"
-            itens.append(((ordem_do_minuto(minuto), lado != "casa", dy),
+            itens.append(((ordem_do_minuto(minuto), n, lado != "casa", dy),
                           {"minuto": minuto, "lado": lado, "icone": icone, "jogador": nome}))
 
-    lidos = {chave_nome(i["jogador"]) for _, i in itens if i["jogador"]}
-    for chave in sem_minuto - lidos:
-        avisos.add(f"evento com minuto ilegivel em todas as telas (jogador ~{chave})")
+    # Nome visto so onde nao deu para situar pode ser um evento perdido. Mas
+    # quase sempre e leitura torta de quem foi lido certo noutra tela
+    # ("nilmarv" = Nilmar) ou lixo curto ("a"): esses nao viram aviso.
+    # Tambem pedaco de nome lido: o OCR as vezes parte a linha, e "Sergio
+    # Ramos" vira "Sergi" + "Ramos" - por isso compara tambem com cada
+    # palavra dos nomes lidos.
+    # Antes de comparar, junta as letras que o OCR troca: "danjlp" (Danilo,
+    # Santos x Fluminense) nao chegava a 0.7 de "danilo" e virava revisar.
+    def sem_trocas(chave):
+        return chave.translate(TROCAS_LETRA)
 
-    # Ordem: minuto, depois lado, depois de cima para baixo. Por lado porque a
+    lidos = [sem_trocas(chave_nome(i["jogador"])) for _, i in itens if i["jogador"]]
+    lidos += [sem_trocas(chave_nome(p)) for _, i in itens if i["jogador"]
+              for p in i["jogador"].split() if p.lower() not in PARTICULAS]
+
+    def perdido(chave):
+        return len(chave) >= 4 and not get_close_matches(sem_trocas(chave), lidos, n=1, cutoff=0.7)
+
+    for chave in filter(perdido, sem_minuto):
+        avisos.add(f"evento com minuto ilegivel em todas as telas (jogador ~{chave})")
+    # Na bolha de ordem incerta o minuto e o lado sao conhecidos. Se ali ja
+    # tem evento lido com nome parecido (um contido no outro, ou >= 0.6), e
+    # ele: "klep9r" = Kleber aos 80' (Sport x Vasco), e "jesusnavasbanrisul..."
+    # = Jesus Navas com o letreiro do estadio grudado (Inter x Vitoria). So
+    # no mesmo minuto e lado da para afrouxar assim sem esconder evento.
+    def lido_ali(chave, minuto, lado):
+        chave = sem_trocas(chave)
+        for _, i in itens:
+            if i["minuto"] != minuto or i["lado"] != lado or not i["jogador"]:
+                continue
+            nome = sem_trocas(chave_nome(i["jogador"]))
+            contido = (len(nome) >= 4 and nome in chave) or (len(chave) >= 4 and chave in nome)
+            if contido or SequenceMatcher(None, chave, nome).ratio() >= 0.6:
+                return True
+        return False
+
+    for chave in filter(perdido, set(sem_ordem) - sem_minuto):
+        if all(lido_ali(chave, minuto, lado) for minuto, lado in sem_ordem[chave]):
+            continue
+        avisos.add(f"evento sempre no topo da lista, sem saber qual bolha (jogador ~{chave})")
+
+    # Toda bolha tem ao menos um evento. Bolha sem nenhum = evento que nao
+    # foi lido em lugar nenhum; sem esta conta ele sumia sem aviso.
+    com_evento = {(i["minuto"], ordem[1]) for ordem, i in itens}
+    for minuto, (periodo, n) in sorted(bolhas_vistas - com_evento,
+                                       key=lambda b: (ordem_do_minuto(b[0]), b[1])):
+        qual = f" ({n + 1}a bolha desse minuto)" if n else ""
+        qual += " (depois do intervalo)" if periodo else ""
+        avisos.add(f"bolha {minuto}'{qual} sem nenhum evento lido: evento perdido")
+
+    # Ordem: minuto, bolha, depois lado, depois de cima para baixo. Por lado porque a
     # assistencia pertence ao gol logo acima DO MESMO LADO.
     itens.sort(key=lambda t: t[0])
     return [i for _, i in itens]
@@ -996,6 +1294,118 @@ def normalizar_time(nome, lado: str, avisos: Avisos):
     return nome
 
 
+# Letras que o NFKD nao separa em base + acento ("ł" nao vira "l" + marca).
+LETRAS_SEM_DECOMPOSICAO = str.maketrans({"ł": "l", "ø": "o", "đ": "d", "ß": "ss", "æ": "ae",
+                                         "œ": "oe", "ı": "i", "þ": "th"})
+
+
+def chave_base(texto):
+    """'Łukasz Fabiański' -> 'lukaszfabianski': sem acento, espaco e pontuacao."""
+    t = unicodedata.normalize("NFKD", texto.lower().translate(LETRAS_SEM_DECOMPOSICAO))
+    return re.sub(r"[^a-z0-9]", "", "".join(c for c in t if not unicodedata.combining(c)))
+
+
+_elencos = None
+
+
+def elencos():
+    """Chave do time -> nomes dos jogadores, da base do PES. None se nao ha
+    base configurada ou ela nao abre (ai os nomes ficam como lidos)."""
+    global _elencos
+    if _elencos is None:
+        _elencos = {}
+        if BASE_JOGADORES and Path(BASE_JOGADORES).is_file():
+            with gzip.open(BASE_JOGADORES, "rt", encoding="utf-8") as f:
+                for jogador in json.load(f):
+                    for time in jogador["t"]:
+                        _elencos.setdefault(chave_base(time), []).append(jogador["n"])
+    return _elencos or None
+
+
+def elenco_do_time(time):
+    """Jogadores do time na base. O nome pode ser mais curto no times.py
+    ("Vasco" x "Vasco da Gama"): vale o igual, senao o unico que comeca igual."""
+    base = elencos()
+    if not base or not time:
+        return None
+    chave = chave_base(NOME_NA_BASE.get(time, time))
+    if chave in base:
+        return base[chave]
+    parecidos = [c for c in base if c.startswith(chave)]
+    return base[parecidos[0]] if len(parecidos) == 1 else None
+
+
+def nome_do_elenco(nome, elenco):
+    """O jogador do elenco mais parecido com o nome lido, ou None se nenhum
+    parece o bastante ou se dois parecem quase igual (na duvida, nao troca)."""
+    chave = chave_base(nome)
+    pontos = sorted(((SequenceMatcher(None, chave, chave_base(c)).ratio(), c) for c in elenco),
+                    reverse=True)
+    if not pontos or pontos[0][0] < SEMELHANCA_MINIMA_NOME:
+        return None
+    if len(pontos) > 1 and pontos[0][0] - pontos[1][0] < FOLGA_MINIMA_NOME:
+        # Dois "Danilo" no mesmo elenco: se a grafia e a mesma, tanto faz.
+        return pontos[0][1] if pontos[0][1] == pontos[1][1] else None
+    return pontos[0][1]
+
+
+def corrigir_nomes(casa, fora, eventos, notas, avisos: Avisos):
+    """Troca cada nome lido pelo do elenco do time na base do PES."""
+    if elencos() is None:
+        return
+    elenco = {"casa": elenco_do_time(casa), "fora": elenco_do_time(fora)}
+    for lado, time in (("casa", casa), ("fora", fora)):
+        if elenco[lado] is None:
+            avisos.add(f"time {time} nao achado na base de jogadores: nomes da {lado} "
+                       "ficaram como o OCR leu", revisar=False)
+
+    def corrigir(nome, lado):
+        if not nome or elenco[lado] is None:
+            return nome
+        certo = nome_do_elenco(nome, elenco[lado])
+        if certo is None:
+            # Pode ser jogador transferido depois da base, ou leitura ruim.
+            # O site ainda tenta casar o nome; so fica o registro.
+            avisos.add(f"'{nome}' ({lado}) nao esta no elenco da base", revisar=False)
+            return nome
+        return certo
+
+    outro = {"casa": "fora", "fora": "casa"}
+    for ev in eventos:
+        lado = ev["lado"]
+        # No gol contra o autor e do time que sofreu o gol.
+        autor = outro[lado] if ev["tipo"] == "gol_contra" else lado
+        for campo in ("jogador", "assistencia", "entrou", "saiu"):
+            if campo in ev:
+                ev[campo] = corrigir(ev[campo], autor if campo == "jogador" else lado)
+    for lado, lista in notas.items():
+        for n in lista:
+            n["jogador"] = corrigir(n["jogador"], lado)
+    juntar_notas_repetidas(notas, avisos)
+
+
+def juntar_notas_repetidas(notas: dict, avisos: Avisos):
+    """O OCR le o mesmo nome com grafias diferentes em telas diferentes
+    ("Samuel Eto'o" / "Samuel Etoo"), entao ler_notas nao junta as duas
+    linhas; depois da correcao pelo elenco elas tem o mesmo nome. Junta."""
+    for lado, lista in notas.items():
+        unicos = {}
+        for n in lista:
+            chave = chave_nome(n["jogador"]) if n["jogador"] else None
+            if chave is None or chave not in unicos:
+                unicos[chave if chave else id(n)] = n
+                continue
+            dono = unicos[chave]
+            for campo in ("numero", "nota"):
+                if dono[campo] is None:
+                    dono[campo] = n[campo]
+                elif n[campo] is not None and n[campo] != dono[campo]:
+                    avisos.add(f"notas ({lado}), jogador {dono['jogador']} lido duas vezes "
+                               f"com {campo} diferente: {dono[campo]} e {n[campo]}")
+            dono["melhor_em_campo"] = dono["melhor_em_campo"] or n["melhor_em_campo"]
+        notas[lado] = list(unicos.values())
+
+
 def serie_da_partida(casa, fora):
     """Mesma regra do loop (rodar_jogos.nome_do_video): so ha serie quando os
     dois times sao da mesma. A x B, ou time que so completa a liga -> None."""
@@ -1084,6 +1494,7 @@ def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
     itens = ler_eventos(ocr, por_aba["eventos"], avisos) if por_aba["eventos"] else []
     eventos = montar_eventos(itens, avisos)
     notas = ler_notas(ocr, por_aba["pontuacao"], avisos)
+    corrigir_nomes(casa, fora, eventos, notas, avisos)
     conferir_notas(notas, eventos, avisos)
     est = None
     if por_aba["estatisticas"]:
@@ -1166,6 +1577,10 @@ def main() -> int:
         print(f"ERRO: {erro}")
         return 1
 
+    if elencos() is None:
+        motivo = (f"nao achei {BASE_JOGADORES}" if BASE_JOGADORES
+                  else "'base_jogadores' vazio no caminhos.ini")
+        print(f"AVISO: nomes ficam como o OCR leu ({motivo}).")
     print(f"{len(videos)} video(s) para processar.\n")
     falhas = 0
     for video in videos:
