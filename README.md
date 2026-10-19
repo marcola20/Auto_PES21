@@ -20,6 +20,8 @@ rodar_jogos.py  ->  extrair_eventos.py  ->  enviar_resultados.py  ->  (RPA_Youtu
 - **Windows 10/11 em português** (o OCR do Windows, com o idioma Português,
   é usado para ler o fim do vídeo).
 - **Python 3.10 ou mais novo** — na instalação, marque *"Add Python to PATH"*.
+- **Git** (para o `git clone` abaixo). Sem Git, dá para baixar pelo GitHub em
+  *Code → Download ZIP* e descompactar.
 - **PES 2021** com o patch e o **sider**.
 - **NVIDIA GeForce Experience / App** com a gravação no atalho **Alt+F9**.
 
