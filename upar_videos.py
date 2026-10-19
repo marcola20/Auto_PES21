@@ -2,7 +2,8 @@
 upar_videos.py  --  RPA_Youtube
 
 Sobe os jogos gravados pelo Auto_PES21 para o YouTube, cada um programado como
-ESTREIA, de 20 em 20 minutos.
+ESTREIA (ou como PRIVADO, sem data). Voce escolhe a ordem dos jogos e de
+quantos em quantos minutos eles estreiam.
 
 PREPARO (uma vez):
   1. python login.py   -> entra na conta do canal no Chrome do robo.
@@ -17,7 +18,9 @@ USO:
   python upar_videos.py --limite 1   -> sobe so os N primeiros (bom para teste)
 
 O QUE ELE FAZ:
-  - Pega os videos soltos em config.PASTA_VIDEOS, em ordem de gravacao.
+  - Lista os videos soltos em config.PASTA_VIDEOS, em ordem de gravacao, e
+    deixa voce reordenar, tirar algum da lista ou juntar jogos no mesmo
+    horario com + (ex.: 1+2,3 -> 1 e 2 estreiam juntos, 3 no horario seguinte).
   - Titulo: "<nome do arquivo> | 3ª Rodada | Brasileirão CBFV"
             (Semi -> "Semifinal", Final -> "Final").
   - Descricao do .txt, playlist da edicao, "nao e para criancas", estreia com
@@ -31,6 +34,8 @@ ficado como RASCUNHO no Studio - apague la antes de rodar de novo.
 
 import argparse
 import csv
+import re
+import struct
 import shutil
 import sys
 import time
@@ -117,6 +122,54 @@ def perguntar_hora() -> tuple[int, int]:
             print("  Horario invalido. Exemplo: 18:00")
 
 
+def perguntar_ordem(videos: list[Path]) -> list[list[Path]]:
+    """Mostra os videos na ordem de gravacao e deixa voce reordenar, tirar algum
+    ou juntar jogos no mesmo horario com + (ex.: 1+2,3 -> 1 e 2 juntos, depois 3).
+
+    Devolve os horarios em ordem; cada horario e a lista de jogos que estreiam nele.
+    """
+    print("\nVideos na pasta, em ordem de gravacao:")
+    for i, v in enumerate(videos, 1):
+        print(f"  {i:>2}. {formatar_duracao(duracao_segundos(v)):>7}  {v.stem}"
+              f"   ({v.stat().st_size / 1024**3:.1f} GB, "
+              f"gravado {datetime.fromtimestamp(v.stat().st_mtime):%d/%m %H:%M})")
+    while True:
+        r = input("Ordem dos jogos? (ex.: 3,1,2 - use + para o mesmo horario, ex.: 1+2,3 "
+                  "- Enter mantem a ordem acima): ").strip()
+        if not r:
+            return [[v] for v in videos]
+        r = re.sub(r"\s*\+\s*", "+", r)
+        grupos = [[x for x in g.split("+") if x] for g in re.split(r"[\s,;]+", r) if g.strip("+")]
+        numeros = [x for g in grupos for x in g]
+        if not all(x.isdigit() for x in numeros):
+            print("  Use so numeros separados por virgula (e + para juntar). Exemplo: 1+2,3")
+            continue
+        escolhidos = [int(x) for x in numeros]
+        if any(not 1 <= n <= len(videos) for n in escolhidos):
+            print(f"  Use numeros de 1 a {len(videos)}.")
+            continue
+        if len(set(escolhidos)) != len(escolhidos):
+            print("  Voce repetiu algum numero.")
+            continue
+        fora = [v.stem for i, v in enumerate(videos, 1) if i not in escolhidos]
+        if fora:
+            print(f"  Fica(m) de fora: {', '.join(fora)}")
+            if not confirmar("  Tudo bem"):
+                continue
+        return [[videos[int(n) - 1] for n in g] for g in grupos]
+
+
+def perguntar_intervalo() -> int:
+    padrao = config.MINUTOS_ENTRE_JOGOS
+    while True:
+        r = input(f"Intervalo entre as estreias, em minutos? (Enter = {padrao}): ").strip()
+        if not r:
+            return padrao
+        if r.isdigit() and 1 <= int(r) <= 24 * 60:
+            return int(r)
+        print("  Responda um numero de minutos. Exemplo: 30")
+
+
 def perguntar_modo() -> str:
     """estreia = programado com contagem regressiva; privado = so sobe, sem data."""
     while True:
@@ -153,6 +206,60 @@ def confirmar(pergunta: str) -> bool:
 # ==========================================================================
 # VIDEOS E PLANO
 # ==========================================================================
+
+
+def duracao_segundos(arquivo: Path) -> float | None:
+    """Duracao lida no cabecalho do .mp4/.mov (o mesmo dado de Propriedades > Detalhes).
+
+    Nao usa ffmpeg (nao esta instalado) nem abre o Windows para cada arquivo:
+    le so os primeiros bytes de cada caixa do arquivo ate achar o 'mvhd'.
+    """
+    try:
+        with arquivo.open("rb") as f:
+            return _procurar_mvhd(f, 0, arquivo.stat().st_size)
+    except (OSError, struct.error, IndexError):
+        return None
+
+
+def _procurar_mvhd(f, inicio: int, fim: int) -> float | None:
+    pos = inicio
+    while pos < fim - 8:
+        f.seek(pos)
+        cabecalho = f.read(8)
+        if len(cabecalho) < 8:
+            return None
+        tamanho, tipo = struct.unpack(">I4s", cabecalho)
+        corpo = pos + 8
+        if tamanho == 1:                      # caixa grande: o tamanho vem em 8 bytes
+            tamanho = struct.unpack(">Q", f.read(8))[0]
+            corpo += 8
+        elif tamanho == 0:                    # vai ate o fim do arquivo
+            tamanho = fim - pos
+        if tamanho < 8:
+            return None
+        if tipo == b"moov":
+            return _procurar_mvhd(f, corpo, pos + tamanho)
+        if tipo == b"mvhd":
+            versao = f.read(1)[0]
+            f.read(3)                         # flags
+            if versao == 1:
+                f.read(16)                    # datas de criacao e modificacao
+                escala, duracao = struct.unpack(">IQ", f.read(12))
+            else:
+                f.read(8)
+                escala, duracao = struct.unpack(">II", f.read(8))
+            return duracao / escala if escala else None
+        pos += tamanho
+    return None
+
+
+def formatar_duracao(segundos: float | None) -> str:
+    if not segundos:
+        return "  --  "
+    total = int(segundos)
+    if total >= 3600:
+        return f"{total // 3600}:{total % 3600 // 60:02d}:{total % 60:02d}"
+    return f"{total // 60}:{total % 60:02d}"
 
 
 def ja_enviados() -> set[tuple[str, int]]:
@@ -197,14 +304,17 @@ def achar_miniatura(competicao: str) -> Path:
     return arq
 
 
-def montar_plano(videos, competicao, rodada, inicio):
-    """inicio=None (modo privado): os videos sobem sem horario."""
+def montar_plano(horarios, competicao, rodada, inicio, intervalo=None):
+    """horarios: lista de grupos de videos; os do mesmo grupo estreiam juntos.
+    inicio=None (modo privado): os videos sobem sem horario."""
     nome = config.COMPETICOES[competicao]["nome"]
+    intervalo = intervalo or config.MINUTOS_ENTRE_JOGOS
     plano = []
-    for i, video in enumerate(videos):
-        titulo = f"{video.stem} | {rotulo_rodada(rodada)} | {nome}"
-        estreia = None if inicio is None else inicio + timedelta(minutes=i * config.MINUTOS_ENTRE_JOGOS)
-        plano.append({"video": video, "titulo": titulo, "estreia": estreia})
+    for i, grupo in enumerate(horarios):
+        estreia = None if inicio is None else inicio + timedelta(minutes=i * intervalo)
+        for video in grupo:
+            titulo = f"{video.stem} | {rotulo_rodada(rodada)} | {nome}"
+            plano.append({"video": video, "titulo": titulo, "estreia": estreia})
     return plano
 
 
@@ -223,6 +333,25 @@ def validar_plano(plano) -> list[str]:
     return problemas
 
 
+def avisos_de_duracao(plano) -> list[str]:
+    """Avisa se um jogo ainda estiver rolando quando o proximo horario estrear.
+    Jogos no mesmo horario (juntados com +) nao contam como sobreposicao."""
+    avisos = []
+    horarios = sorted({item["estreia"] for item in plano if item["estreia"] is not None})
+    for atual in plano:
+        seguinte = next((h for h in horarios if atual["estreia"] is not None and h > atual["estreia"]), None)
+        if seguinte is None:
+            continue
+        duracao = duracao_segundos(atual["video"])
+        if duracao is None:
+            continue
+        sobra = (seguinte - atual["estreia"]).total_seconds() - duracao
+        if sobra < 0:
+            avisos.append(f"{atual['video'].stem} ({formatar_duracao(duracao)}) ainda estara no ar "
+                          f"quando o proximo estrear as {seguinte:%H:%M}")
+    return avisos
+
+
 def mostrar_plano(plano, playlist, miniatura: Path) -> None:
     print()
     print(f"Playlist: {playlist if playlist else '(nenhuma - competicao sem playlist)'}")
@@ -237,8 +366,13 @@ def mostrar_plano(plano, playlist, miniatura: Path) -> None:
     for i, item in enumerate(plano, 1):
         tamanho_gb = item["video"].stat().st_size / 1024**3
         quando = f"{item['estreia']:%d/%m %H:%M}" if item["estreia"] else "privado     "
-        print(f"  {i:>2}. {quando}  {item['titulo']}   ({tamanho_gb:.1f} GB)")
-    print()
+        duracao = formatar_duracao(duracao_segundos(item["video"]))
+        print(f"  {i:>2}. {quando}  {item['titulo']}   ({duracao}, {tamanho_gb:.1f} GB)")
+    avisos = avisos_de_duracao(plano)
+    if avisos:
+        for aviso in avisos:
+            print(f"  AVISO: {aviso}")
+        print()
 
 
 # ==========================================================================
@@ -301,11 +435,17 @@ def main() -> int:
 
     competicao = perguntar_competicao()
     rodada = perguntar_rodada(competicao)
+    horarios = perguntar_ordem(videos)
     # No modo privado nao ha o que agendar, entao nem pergunta data e horario.
-    inicio = perguntar_inicio() if perguntar_modo() == "estreia" else None
+    if perguntar_modo() == "estreia":
+        inicio = perguntar_inicio()
+        # Com um horario so (todos juntos), nao ha intervalo a perguntar.
+        intervalo = perguntar_intervalo() if len(horarios) > 1 else None
+    else:
+        inicio, intervalo = None, None
 
     playlist = config.nome_playlist(competicao)
-    plano = montar_plano(videos, competicao, rodada, inicio)
+    plano = montar_plano(horarios, competicao, rodada, inicio, intervalo)
     mostrar_plano(plano, playlist, config.COMPETICOES[competicao]["miniatura"])
 
     problemas = validar_plano(plano)

@@ -95,6 +95,15 @@ Ele pergunta:
 3. Estreia ou Privado
 4. Se for estreia: data e horário do primeiro jogo
 
+Na ordem dos jogos, `+` põe dois (ou mais) jogos **no mesmo horário**:
+
+```
+Ordem dos jogos? 1+2,3,4
+```
+
+→ os jogos 1 e 2 estreiam juntos às 18:00, o 3 às 18:20 e o 4 às 18:40.
+Enter mantém a ordem de gravação, um jogo por horário.
+
 Mostra o plano (título e horário de cada vídeo), pede confirmação e sobe um
 por um. O título é o nome do arquivo + rodada + competição:
 
