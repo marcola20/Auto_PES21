@@ -270,6 +270,18 @@ def ler_titulo_da_aba(tela: Image.Image = None) -> list:
     return mascara_texto_branco(tela.crop(REGIAO_TITULO_ABA))
 
 
+# Lista da aba ativa no painel de fim de jogo (as linhas de jogadores na aba de
+# notas). Serve so para saber se a lista rolou: rolar uma linha muda tudo aqui.
+REGIAO_LISTA_DA_ABA = (420, 345, 1460, 780)
+
+
+def ler_lista_da_aba(tela: Image.Image = None) -> list:
+    """Le a lista da aba ativa no painel de fim de jogo."""
+    if tela is None:
+        tela = capturar_tela()
+    return mascara_texto_branco(tela.crop(REGIAO_LISTA_DA_ABA))
+
+
 # Palavra "TECNICO" na barra de baixo da tela de FORMACAO (escalacao).
 # O recorte e justo: o T e o O encostam nas bordas. Nao atrapalha, porque a
 # captura ao vivo e cortada igual - mas se um dia a formacao deslocar alguns

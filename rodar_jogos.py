@@ -41,6 +41,13 @@ SEGUNDOS_ESPERAR_REPLAY = 50
 SEGUNDOS_TELA_PARADA = 60
 PASTA_DIAGNOSTICO = "diagnostico_travou"
 
+VEZES_BAIXO_NAS_NOTAS = 5        # a aba inicial (Pontuacao dos jogadores)
+                                 # mostra so 11 linhas: rolar para os
+                                 # reservas que entraram aparecerem no video.
+                                 # 5 cobre ate 5 trocas; Baixo a mais nao faz
+                                 # mal, a lista para no fim
+PAUSA_BAIXO_NAS_NOTAS = 1.5      # cada posicao da lista precisa ficar parada
+                                 # no video para o extrair_eventos.py ler
 VEZES_R1 = 2                     # quantas abas avancar a partir da inicial
 PAUSA_R1 = 2.0                   # entre um R1 e outro: a aba do meio
                                  # (Estatisticas) precisa ficar parada no
@@ -640,6 +647,8 @@ def mostrar_eventos_da_partida() -> bool:
         detalhe("AVISO - nao achei o titulo da aba, pulando o resumo")
         return False
 
+    rolar_notas_dos_jogadores()
+
     teclado.apertar(teclado.TECLA_R1, VEZES_R1, pausa=PAUSA_R1)
     time.sleep(1.0)
 
@@ -659,6 +668,29 @@ def mostrar_eventos_da_partida() -> bool:
     detalhe(f"mostrando os eventos da partida por {SEGUNDOS_MOSTRANDO_EVENTOS}s")
     time.sleep(SEGUNDOS_MOSTRANDO_EVENTOS)
     return True
+
+
+def rolar_notas_dos_jogadores() -> None:
+    """Na aba inicial do fim de jogo (notas), desce a lista ate os reservas.
+
+    Sem isso o video so mostra os 11 titulares, e o extrator nao tem a nota de
+    quem entrou - nem a estrela, se o melhor em campo for reserva. Um Baixo
+    de cada vez e com pausa, pelo mesmo motivo da lista de eventos: cada
+    posicao precisa aparecer parada no video.
+
+    Nao falha: se a lista nao mexer, pode ser so que ninguem entrou.
+    """
+    antes = visao.ler_lista_da_aba()
+    teclado.apertar(teclado.TECLA_BAIXO, VEZES_BAIXO_NAS_NOTAS,
+                    pausa=PAUSA_BAIXO_NAS_NOTAS)
+    depois = visao.ler_lista_da_aba()
+    parecenca = visao.sobreposicao(antes, depois)
+    if parecenca >= visao.LIMIAR_NOME_TIME:
+        detalhe(f"a lista de notas nao rolou (semelhanca {parecenca:.3f}) - "
+                f"sem reservas, ou o Baixo nao pegou nessa aba")
+    else:
+        detalhe(f"lista de notas rolada ate os reservas "
+                f"(semelhanca {parecenca:.3f})")
 
 
 def voltar_para_selecao() -> bool:

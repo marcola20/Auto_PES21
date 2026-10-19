@@ -67,8 +67,9 @@ NOME_NA_BASE = {"Sport": "Sport Recife"}
 # loop demorar mais em alguma aba; o custo e so decodificar mais video.
 SEGUNDOS_DO_FINAL = 90
 
-# Quadros por segundo tirados desse trecho. A aba "Pontuacao dos jogadores"
-# fica na tela so ~1s; com 4 por segundo ela sempre cai em varios quadros.
+# Quadros por segundo tirados desse trecho. Cada posicao da lista de notas
+# fica na tela ~1.5s (o loop rola devagar); com 4 por segundo ela sempre cai
+# em varios quadros.
 QUADROS_POR_SEGUNDO = 4
 
 # Barra de botoes do "Fim de jogo", em fracao da tela (vale em 720p e 1080p).
@@ -1434,9 +1435,9 @@ def conferir_notas(notas: dict, eventos: list, avisos: Avisos):
     melhores = [n["jogador"] for lista in notas.values() for n in lista if n["melhor_em_campo"]]
     if len(melhores) != 1 and any(notas.values()):
         avisos.add(f"esperava 1 melhor em campo, achei {len(melhores)}: {melhores}")
-    # A aba de notas mostra os 11 titulares e o loop nao rola essa lista, entao
-    # quem entrou no jogo normalmente fica de fora. E limitacao do video, nao
-    # erro de leitura: so informa, sem marcar para revisao.
+    # O loop rola a aba de notas ate os reservas, mas video gravado antes
+    # disso so mostra os 11 titulares, e quem entrou fica de fora. E limitacao
+    # do video, nao erro de leitura: so informa, sem marcar para revisao.
     com_nota = {chave_nome(n["jogador"]) for lista in notas.values() for n in lista if n["jogador"]}
     sem_nota = [e["entrou"] for e in eventos
                 if e["tipo"] == "substituicao" and e["entrou"]
