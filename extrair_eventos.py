@@ -1307,19 +1307,30 @@ def chave_base(texto):
 
 
 _elencos = None
+_erro_base = None   # por que a base nao abriu, para o aviso do main()
 
 
 def elencos():
     """Chave do time -> nomes dos jogadores, da base do PES. None se nao ha
-    base configurada ou ela nao abre (ai os nomes ficam como lidos)."""
-    global _elencos
+    base configurada ou ela nao abre (ai os nomes ficam como lidos).
+
+    Aceita o .json.gz do site e tambem o .json solto: o navegador as vezes
+    descompacta o arquivo ao baixar e deixa o nome .gz (aconteceu num PC).
+    """
+    global _elencos, _erro_base
     if _elencos is None:
         _elencos = {}
         if BASE_JOGADORES and Path(BASE_JOGADORES).is_file():
-            with gzip.open(BASE_JOGADORES, "rt", encoding="utf-8") as f:
-                for jogador in json.load(f):
+            try:
+                dados = Path(BASE_JOGADORES).read_bytes()
+                if dados[:2] == b"\x1f\x8b":          # assinatura do gzip
+                    dados = gzip.decompress(dados)
+                for jogador in json.loads(dados.decode("utf-8-sig")):
                     for time in jogador["t"]:
                         _elencos.setdefault(chave_base(time), []).append(jogador["n"])
+            except (OSError, EOFError, ValueError, KeyError, TypeError) as erro:
+                _elencos = {}
+                _erro_base = f"nao consegui ler {BASE_JOGADORES}: {erro}"
     return _elencos or None
 
 
@@ -1579,7 +1590,7 @@ def main() -> int:
         return 1
 
     if elencos() is None:
-        motivo = (f"nao achei {BASE_JOGADORES}" if BASE_JOGADORES
+        motivo = ((_erro_base or f"nao achei {BASE_JOGADORES}") if BASE_JOGADORES
                   else "'base_jogadores' vazio no caminhos.ini")
         print(f"AVISO: nomes ficam como o OCR leu ({motivo}).")
     print(f"{len(videos)} video(s) para processar.\n")
