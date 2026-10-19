@@ -2,7 +2,8 @@
 
 Sobe para o YouTube os jogos gravados pelo
 [Auto_PES21](https://github.com/marcola20/Auto_PES21), cada um programado como
-**estreia** (de 20 em 20 minutos), com título, descrição, miniatura e playlist
+**estreia** (de 20 em 20 minutos, ou o intervalo que você escolher) ou como
+**privado**, com título, descrição, miniatura e playlist
 da competição.
 
 ---
@@ -12,6 +13,8 @@ da competição.
 ### 1.1 O que precisa ter no PC
 
 - **Python 3.10 ou mais novo** — na instalação, marque *"Add Python to PATH"*.
+- **Git** (para o `git clone` abaixo). Sem Git, dá para baixar pelo GitHub em
+  *Code → Download ZIP* e descompactar.
 - **Google Chrome** instalado.
 - O **YouTube Studio em português** (o script procura os botões pelo texto).
 
@@ -70,7 +73,7 @@ Em `config.py`:
 | Edição e temporada | `EDICAO` e `TEMPORADA` |
 | Nome das playlists | `COMPETICOES` → `playlist` (tem que ser o nome **exato** da playlist no canal, e ela já tem que existir) |
 | Rodadas aceitas | `COMPETICOES` → `rodadas` |
-| Intervalo entre estreias | `MINUTOS_ENTRE_JOGOS` |
+| Intervalo padrão entre estreias (o script pergunta na hora; Enter usa este) | `MINUTOS_ENTRE_JOGOS` |
 
 Descrições e miniaturas de cada competição são os arquivos
 `descricao_*.txt` e `capa_*.jpg` na pasta do projeto — é só trocar.
@@ -92,8 +95,11 @@ Ele pergunta:
 
 1. Qual competição (Série A, Série B, Copa, Supercopa)
 2. Qual rodada
-3. Estreia ou Privado
-4. Se for estreia: data e horário do primeiro jogo
+3. A ordem dos jogos — mostra os vídeos da pasta (com duração) e você pode
+   reordenar ou deixar algum de fora
+4. Estreia ou Privado
+5. Se for estreia: data e horário do primeiro jogo, e o intervalo entre as
+   estreias (Enter = 20 minutos)
 
 Na ordem dos jogos, `+` põe dois (ou mais) jogos **no mesmo horário**:
 
