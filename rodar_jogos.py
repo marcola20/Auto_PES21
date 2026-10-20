@@ -3,7 +3,7 @@
 # ==========================================================================
 
 JOGOS = [
-    ("Fluminense", "Gremio")
+    ("Botafogo", "Gremio")
 ]
 
 CONFLITOS_DE_UNIFORME = {

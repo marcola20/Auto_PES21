@@ -1163,8 +1163,11 @@ def ler_eventos(ocr, telas, avisos: Avisos):
     # palavra dos nomes lidos.
     # Antes de comparar, junta as letras que o OCR troca: "danjlp" (Danilo,
     # Santos x Fluminense) nao chegava a 0.7 de "danilo" e virava revisar.
+    # E tira a pontuacao: o escudo de uma faixa da torcida atras do cartao
+    # virou "o'." grudado em "pavsilva" (David Silva, Botafogo x Gremio), e
+    # so o "'." ja derrubava de 0.74 para 0.67.
     def sem_trocas(chave):
-        return chave.translate(TROCAS_LETRA)
+        return re.sub(r"[^a-z0-9]", "", chave.translate(TROCAS_LETRA))
 
     lidos = [sem_trocas(chave_nome(i["jogador"])) for _, i in itens if i["jogador"]]
     lidos += [sem_trocas(chave_nome(p)) for _, i in itens if i["jogador"]
