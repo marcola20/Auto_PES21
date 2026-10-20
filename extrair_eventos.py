@@ -5,8 +5,8 @@ Le o FINAL de cada video de partida (a tela "Fim de jogo") e salva, ao lado
 do video, um .json com placar, eventos, notas dos jogadores e estatisticas.
 
 E uma automacao separada do loop de gravacao (rodar_jogos.py): roda depois,
-sobre os videos ja gravados, e nao mexe no jogo. Roda 100% local, sem API:
-a leitura e feita pelo OCR que ja vem no Windows.
+sobre os videos ja gravados, e nao mexe no jogo. A leitura e feita pelo OCR
+que ja vem no Windows; a internet so serve para ler os elencos atuais no site.
 
 Como funciona:
   1. O ffmpeg decodifica so os ultimos segundos do video.
@@ -24,8 +24,8 @@ Como funciona:
      triangulo azul/verde/vermelho, cartao).
   6. Monta os eventos (pareia substituicoes, liga assistencia ao gol),
      normaliza os times com times.py, troca cada nome de jogador pelo do
-     elenco do time na base do PES do site (o OCR erra letra que nao existe
-     em portugues: "Č", "ć", "ń") e confere: gols nos eventos TEM que
+     elenco do time, base do PES + elenco atual no site (o OCR erra letra
+     que nao existe em portugues: "Č", "ć", "ń") e confere: gols nos eventos TEM que
      bater com o placar. Se algo nao bate ou ficou ilegivel, o .json sai com
      "status": "revisar" e o motivo em "avisos". Nada e inventado: campo
      ilegivel ou empatado na votacao vira null.
@@ -47,7 +47,7 @@ Uso:
 # CONFIGURACOES
 # ==========================================================================
 
-from caminhos import PASTA_VIDEOS, BASE_JOGADORES   # definidas em caminhos.ini
+from caminhos import PASTA_VIDEOS, BASE_JOGADORES, SITE_URL   # definidas em caminhos.ini
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
 
 # Correcao dos nomes pelo elenco (base_jogadores no caminhos.ini). O OCR em
@@ -57,9 +57,19 @@ EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
 # fica a 0.88-0.93 do certo, e o 2o mais parecido no maximo a 0.46.
 SEMELHANCA_MINIMA_NOME = 0.75
 FOLGA_MINIMA_NOME = 0.15      # do mais parecido para o 2o: senao, na duvida, nao troca
+# Nome do site e da base do mesmo time com essa semelhanca sao o mesmo
+# jogador ("Joan Capdevilla" x "Joan Capdevila" = 0.96).
+SEMELHANCA_MESMO_JOGADOR = 0.9
 # Time do times.py com outro nome na base, quando o "comeca igual" de
 # elenco_do_time nao resolve sozinho ("Sport" tambem casa com Sporting CP...).
 NOME_NA_BASE = {"Sport": "Sport Recife"}
+# Elenco atual de cada time no site (url do caminhos.ini; rota publica, sem
+# token). Soma com a base: ela nao sabe das transferencias da liga. O Render
+# demora para acordar o site, dai o timeout longo; sem resposta, vale a copia
+# da ultima vez que deu certo.
+CAMINHO_ELENCOS_SITE = "/api/teams/roster"
+SEGUNDOS_TIMEOUT_SITE = 90
+CACHE_ELENCOS_SITE = "elencos_site.json"   # ao lado deste script
 
 # Quanto do final do video olhar. No video de referencia a tela "Fim de jogo"
 # com os botoes ocupa so os ultimos ~15s (antes disso vem o replay dos
@@ -186,6 +196,7 @@ import re
 import statistics
 import subprocess
 import sys
+import urllib.request
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1216,6 +1227,12 @@ def minuto_int(texto, avisos: Avisos):
     return int(base)
 
 
+def eh_gol_contra(texto):
+    """O texto "Gol contra" no lugar do nome do jogador (o OCR junta as
+    palavras: "Golcontra")."""
+    return bool(texto) and SequenceMatcher(None, chave_base(texto), "golcontra").ratio() >= 0.8
+
+
 def montar_eventos(itens, avisos: Avisos):
     """Transforma os icones da linha do tempo nos eventos do JSON.
 
@@ -1232,6 +1249,14 @@ def montar_eventos(itens, avisos: Avisos):
     for item in itens:
         minuto = minuto_int(item["minuto"], avisos)
         lado, icone, jogador = item["lado"], item["icone"], item["jogador"]
+
+        if icone == "gol" and eh_gol_contra(jogador):
+            # O PES escreve so "Gol contra", do lado de quem ganhou o gol, e
+            # nao mostra o autor em tela nenhuma do fim de jogo. O site quer
+            # o autor (do time adversario) em "jogador": fica para a revisao.
+            icone, jogador = "gol_contra", None
+            avisos.add(f"gol contra aos {minuto}' a favor da {lado}: o PES nao mostra quem "
+                       "fez - ponha o nome (do time adversario) em \"jogador\"")
 
         if icone in ("gol", "gol_contra"):
             ultimo_gol = {"minuto": minuto, "lado": lado, "tipo": icone,
@@ -1334,17 +1359,78 @@ def elencos():
     return _elencos or None
 
 
-def elenco_do_time(time):
-    """Jogadores do time na base. O nome pode ser mais curto no times.py
-    ("Vasco" x "Vasco da Gama"): vale o igual, senao o unico que comeca igual."""
-    base = elencos()
-    if not base or not time:
+_elencos_site = None
+_erro_site = None   # por que o site nao respondeu, para o aviso do main()
+
+
+def elencos_do_site():
+    """Chave do time -> nomes do elenco ATUAL no site (draft, mercado,
+    emprestimos). A base do PES e uma foto do save: jogador que mudou de
+    time depois dela (Shevchenko no Fluminense, Recoba no Palmeiras) so
+    aparece aqui. Sem internet vale a ultima copia salva em CACHE_ELENCOS_SITE."""
+    global _elencos_site, _erro_site
+    if _elencos_site is None:
+        _elencos_site = {}
+        cache = Path(__file__).with_name(CACHE_ELENCOS_SITE)
+        times_site = None
+        if SITE_URL:
+            try:
+                with urllib.request.urlopen(SITE_URL.rstrip("/") + CAMINHO_ELENCOS_SITE,
+                                            timeout=SEGUNDOS_TIMEOUT_SITE) as resposta:
+                    times_site = json.loads(resposta.read().decode("utf-8"))
+                cache.write_text(json.dumps(times_site, ensure_ascii=False),
+                                              encoding="utf-8")
+            except (OSError, ValueError) as erro:
+                _erro_site = f"site nao respondeu ({erro})"
+        if times_site is None and cache.is_file():
+            try:
+                times_site = json.loads(cache.read_text(encoding="utf-8"))
+                if _erro_site:
+                    _erro_site += f"; usei a copia salva em {CACHE_ELENCOS_SITE}"
+            except (OSError, ValueError):
+                pass
+        try:
+            for time in times_site or []:
+                _elencos_site[chave_base(time["teamName"])] = [j["nome"] for j in time["jogadores"]]
+        except (KeyError, TypeError) as erro:
+            _elencos_site = {}
+            _erro_site = f"resposta do site em formato inesperado: {erro}"
+    return _elencos_site or None
+
+
+def _do_time(elencos_por_chave, time):
+    """O nome pode ser mais curto no times.py ("Vasco" x "Vasco da Gama"):
+    vale o igual, senao o unico que comeca igual."""
+    if not elencos_por_chave:
         return None
-    chave = chave_base(NOME_NA_BASE.get(time, time))
-    if chave in base:
-        return base[chave]
-    parecidos = [c for c in base if c.startswith(chave)]
-    return base[parecidos[0]] if len(parecidos) == 1 else None
+    chave = chave_base(time)
+    if chave in elencos_por_chave:
+        return elencos_por_chave[chave]
+    parecidos = [c for c in elencos_por_chave if c.startswith(chave)]
+    return elencos_por_chave[parecidos[0]] if len(parecidos) == 1 else None
+
+
+def elenco_do_time(time):
+    """Jogadores do time: os da base do PES (grafia do jogo, com Č e ć)
+    somados aos do elenco atual no site. O site grafa diferente as vezes
+    ("Edu Gaspar", "Joan Capdevilla", "Ruud van Nistelrooy" x "Van
+    Nistelrooy"): nome quase igual a um da base, ou um dentro do outro, e o
+    mesmo jogador e fica so o da base, senao os dois empatariam e
+    nome_do_elenco nao trocaria nenhum."""
+    if not time:
+        return None
+    base = _do_time(elencos(), NOME_NA_BASE.get(time, time))
+    site = _do_time(elencos_do_site(), time)
+    if base is None and site is None:
+        return None
+    chaves_base = [chave_base(n) for n in base or []]
+
+    def na_base(nome):
+        k = chave_base(nome)
+        return any(k in c or c in k or SequenceMatcher(None, k, c).ratio() >= SEMELHANCA_MESMO_JOGADOR
+                   for c in chaves_base)
+
+    return list(dict.fromkeys((base or []) + [n for n in site or [] if not na_base(n)]))
 
 
 def nome_do_elenco(nome, elenco):
@@ -1362,13 +1448,13 @@ def nome_do_elenco(nome, elenco):
 
 
 def corrigir_nomes(casa, fora, eventos, notas, avisos: Avisos):
-    """Troca cada nome lido pelo do elenco do time na base do PES."""
-    if elencos() is None:
+    """Troca cada nome lido pelo do elenco do time (base do PES + site)."""
+    if elencos() is None and elencos_do_site() is None:
         return
     elenco = {"casa": elenco_do_time(casa), "fora": elenco_do_time(fora)}
     for lado, time in (("casa", casa), ("fora", fora)):
         if elenco[lado] is None:
-            avisos.add(f"time {time} nao achado na base de jogadores: nomes da {lado} "
+            avisos.add(f"time {time} nao achado na base nem no site: nomes da {lado} "
                        "ficaram como o OCR leu", revisar=False)
 
     def corrigir(nome, lado):
@@ -1378,7 +1464,7 @@ def corrigir_nomes(casa, fora, eventos, notas, avisos: Avisos):
         if certo is None:
             # Pode ser jogador transferido depois da base, ou leitura ruim.
             # O site ainda tenta casar o nome; so fica o registro.
-            avisos.add(f"'{nome}' ({lado}) nao esta no elenco da base", revisar=False)
+            avisos.add(f"'{nome}' ({lado}) nao esta no elenco do time", revisar=False)
             return nome
         return certo
 
@@ -1592,7 +1678,9 @@ def main() -> int:
     if elencos() is None:
         motivo = ((_erro_base or f"nao achei {BASE_JOGADORES}") if BASE_JOGADORES
                   else "'base_jogadores' vazio no caminhos.ini")
-        print(f"AVISO: nomes ficam como o OCR leu ({motivo}).")
+        print(f"AVISO: base do PES nao lida ({motivo}).")
+    if elencos_do_site() is None or _erro_site:
+        print(f"AVISO: elencos atuais do site: {_erro_site or 'url vazia no caminhos.ini'}.")
     print(f"{len(videos)} video(s) para processar.\n")
     falhas = 0
     for video in videos:

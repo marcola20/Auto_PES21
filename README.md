@@ -144,8 +144,15 @@ cartões, substituições e notas. Se o OCR ficou em dúvida, o `.json` sai com
 Os nomes dos jogadores são corrigidos pelo elenco de cada time na base de
 jogadores do PES que o site usa (o OCR lê "Petrbech" em vez de "Petr Čech").
 Para isso, aponte `base_jogadores`, na seção `[site]` do `caminhos.ini`, para o
-arquivo `pes-jogadores.json.gz` do repositório do site (`Fc25_Draft`). Sem ele,
-os nomes ficam como o OCR leu.
+arquivo `pes-jogadores.json.gz` do repositório do site (`Fc25_Draft`). Essa base
+é uma foto do save: quem mudou de time depois dela vem do elenco atual de cada
+time no site (a `url` da mesma seção; sem internet, vale a última cópia, em
+`elencos_site.json`). Sem nenhum dos dois, os nomes ficam como o OCR leu.
+
+Gol contra: o PES escreve só "Gol contra" na linha do tempo, sem dizer quem
+fez. O evento sai como `"tipo": "gol_contra"`, com `"lado"` do time que ganhou
+o gol e `"jogador": null`, e o `.json` fica em `"revisar"`: ponha o nome do
+autor (do time adversário) em `"jogador"` e mude para `"ok"`.
 
 | Comando | O que faz |
 |---|---|

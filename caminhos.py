@@ -50,7 +50,8 @@ PASTA_PES    = _pasta("pasta_pes")
 PASTA_SIDER  = _pasta("pasta_sider")
 PASTA_VIDEOS = _pasta("pasta_videos")
 
-# Opcionais: so o enviar_resultados.py usa, e ele avisa se faltarem.
+# Opcionais: o enviar_resultados.py usa os dois, e avisa se faltarem; o
+# extrair_eventos.py usa a url para ler os elencos atuais dos times.
 # Um caminhos.ini antigo, sem a secao [site], continua valendo.
 SITE_URL   = _arquivo.get("site", "url", fallback="").strip().strip('"')
 SITE_TOKEN = _arquivo.get("site", "token", fallback="").strip().strip('"')
