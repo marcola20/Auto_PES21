@@ -1436,6 +1436,37 @@ def elenco_do_time(time):
     return list(dict.fromkeys((base or []) + [n for n in site or [] if not na_base(n)]))
 
 
+def nome_contido(nome, elenco):
+    """O unico jogador do elenco cujo nome esta inteiro dentro do lido, ou o
+    contrario: o site guarda "Coutinho" e "Verón", o jogo escreve "Philippe
+    Coutinho" e "Juan Sebastián Verón" (0.67 e 0.40 de semelhanca). E a
+    regra "contido" do site (NomesPes.Pontuar): toda palavra do nome curto
+    no longo, uma delas com 3+ letras, e palavra de 5+ letras aceita 1 letra
+    errada ("Petkovié", o OCR sem o ć). Sem a base do PES so resta o nome
+    do site, e sem isto esses nomes ficavam como lidos, com aviso."""
+    def palavras(texto):
+        return [p for p in (chave_base(q) for q in texto.split()) if p]
+
+    def mesma_palavra(a, b):
+        if a == b:
+            return True
+        if min(len(a), len(b)) < 5 or abs(len(a) - len(b)) > 1:
+            return False
+        sm = SequenceMatcher(None, a, b)
+        return sum(max(i2 - i1, j2 - j1) for tag, i1, i2, j1, j2 in sm.get_opcodes()
+                   if tag != "equal") <= 1
+
+    lidas = palavras(nome)
+    achados = set()
+    for candidato in elenco:
+        do_elenco = palavras(candidato)
+        curto, longo = sorted((lidas, do_elenco), key=len)
+        if (curto and all(any(mesma_palavra(p, q) for q in longo) for p in curto)
+                and any(len(p) >= 3 for p in curto)):
+            achados.add(candidato)
+    return achados.pop() if len(achados) == 1 else None
+
+
 def nome_do_elenco(nome, elenco):
     """O jogador do elenco mais parecido com o nome lido, ou None se nenhum
     parece o bastante ou se dois parecem quase igual (na duvida, nao troca)."""
@@ -1443,7 +1474,7 @@ def nome_do_elenco(nome, elenco):
     pontos = sorted(((SequenceMatcher(None, chave, chave_base(c)).ratio(), c) for c in elenco),
                     reverse=True)
     if not pontos or pontos[0][0] < SEMELHANCA_MINIMA_NOME:
-        return None
+        return nome_contido(nome, elenco)
     if len(pontos) > 1 and pontos[0][0] - pontos[1][0] < FOLGA_MINIMA_NOME:
         # Dois "Danilo" no mesmo elenco: se a grafia e a mesma, tanto faz.
         return pontos[0][1] if pontos[0][1] == pontos[1][1] else None
