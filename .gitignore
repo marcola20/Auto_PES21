@@ -22,3 +22,8 @@ resultados_enviados.tmp
 # Caminhos deste PC (pasta do PES, dos videos). Cada um tem o seu; o modelo
 # que vai para o GitHub e caminhos.exemplo.ini.
 caminhos.ini
+
+# Fila de jogos montada no painel.py (estado desta maquina).
+fila_jogos.json
+fila_jogos.tmp
+caminhos.tmp

@@ -85,6 +85,28 @@ def serie_do_time(nome: str):
     return None
 
 
+def time_do_site(nome: str):
+    """O time da lista que o site chama de `nome`, ou None se nao achar.
+
+    O site nem sempre usa o nome do PES: "Internacional" e "Inter",
+    "Juventude" e "EC Juventude". Vale o nome igual; senao, um que comeca o
+    outro ("inter" / "internacional") ou e a ultima palavra dele ("juventude" /
+    "ec juventude") - desde que so UM time da lista sirva, para nao chutar.
+    """
+    alvo = normalizar(nome)
+    for time in TIMES:
+        if normalizar(time) == alvo:
+            return time
+    parecidos = [time for time in TIMES
+                 if _um_contem_o_outro(normalizar(time), alvo)]
+    return parecidos[0] if len(parecidos) == 1 else None
+
+
+def _um_contem_o_outro(a: str, b: str) -> bool:
+    curto, longo = sorted((a, b), key=len)
+    return longo.startswith(curto) or longo.endswith(" " + curto)
+
+
 def normalizar(texto: str) -> str:
     """Tira acentos e deixa minusculo: 'São Paulo' -> 'sao paulo'."""
     sem_acento = unicodedata.normalize("NFKD", texto)

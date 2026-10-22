@@ -11,6 +11,10 @@ rodar_jogos.py  ->  extrair_eventos.py  ->  enviar_resultados.py  ->  (RPA_Youtu
  joga e grava        lê o fim do vídeo       manda para o site         sobe no YouTube
 ```
 
+Quem não quer mexer em código pode fazer tudo pelo **painel no navegador**
+(seção 2.0): montar a fila pelas rodadas do site, ajustar os caminhos e
+rodar os três passos com um clique.
+
 ---
 
 ## 1. Configurar (uma vez)
@@ -93,6 +97,38 @@ python teste_gravacao.py
 
 ## 2. Usar
 
+### 2.0 Pelo painel (o jeito fácil)
+
+```
+python painel.py
+```
+
+Abre o painel no navegador (`http://127.0.0.1:8021`). Deixe a janela do
+terminal aberta enquanto usa; Ctrl+C nela fecha o painel.
+
+- **Jogos:** escolha a competição e a rodada (vêm do site). Os jogos que
+  ainda faltam já vêm marcados; desmarque o que não quiser e clique em
+  *Adicionar à fila*. Jogos já jogados no site ou já gravados na pasta de
+  vídeos vêm desmarcados. Dá para juntar rodadas e competições na mesma fila,
+  mudar a ordem e incluir um jogo avulso.
+- **Rodar jogos:** o painel olha o PES antes de apertar qualquer tecla:
+  - fechado: abre o sider e o jogo (como o `--abrir`);
+  - aberto na seleção de times, ou em uma tela do caminho até ela (título,
+    menu, escolha de lado): continua de lá;
+  - aberto em qualquer outra tela: não aperta nada, avisa e mostra a foto do
+    que viu.
+
+  Depois do clique o PES vem para a frente: **não mexa no mouse nem no
+  teclado** até acabar.
+- **Extrair eventos / Simular envio / Enviar resultados:** os mesmos scripts
+  das seções 2.3 e 2.4, com a saída aparecendo no painel.
+- **Vídeos:** cada jogo da pasta e em que passo está (falta extrair,
+  revisar, pronto para enviar, enviado).
+- **Configuração:** edita o `caminhos.ini` e confere se o PES2021.exe, o
+  sider.exe e a pasta de vídeos estão onde você disse.
+
+O painel só chama os scripts: tudo abaixo continua funcionando pelo terminal.
+
 ### 2.1 Montar a lista de jogos
 
 Abra `rodar_jogos.py` e edite a lista `JOGOS` no topo:
@@ -124,7 +160,18 @@ python rodar_jogos.py
 ```
 
 Você tem 10 segundos para clicar na janela do PES. Depois disso **não mexa no
-mouse nem no teclado**. Cada jogo vira um vídeo chamado
+mouse nem no teclado**.
+
+Ou deixe o script decidir (é o que o painel usa):
+
+```
+python rodar_jogos.py --auto
+```
+
+Com o PES fechado, abre; aberto na seleção de times ou no caminho até ela,
+continua de lá; em outra tela, para sem apertar nada. `--fila arquivo.json`
+troca a lista `JOGOS` por um `.json` no formato
+`[{"casa": "Santos", "fora": "Grêmio", "competicao": "Copa"}]`. Cada jogo vira um vídeo chamado
 `Casa vs Fora.mp4` na `pasta_videos`.
 
 Se parar no meio, o script diz em qual jogo parou e se o vídeo dele foi salvo.

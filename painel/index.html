@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto PES21</title>
+<link rel="stylesheet" href="painel.css">
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <span class="bola" aria-hidden="true"></span>
+    <h1>Auto PES21</h1>
+  </div>
+  <nav class="abas" role="tablist">
+    <button role="tab" data-aba="jogos" class="ativa">Jogos</button>
+    <button role="tab" data-aba="videos">Vídeos</button>
+    <button role="tab" data-aba="config">Configuração</button>
+  </nav>
+  <div id="pilula" class="pilula ociosa">Parado</div>
+</header>
+
+<main class="grade">
+
+  <!-- ============================== JOGOS ============================== -->
+  <section class="painel-aba" id="aba-jogos">
+    <div class="cartao">
+      <div class="cartao-topo">
+        <h2>Rodada do site</h2>
+        <button class="fantasma" id="recarregar-competicoes" title="Buscar de novo no site">Atualizar</button>
+      </div>
+      <div class="linha-campos">
+        <label>Competição
+          <select id="competicao"><option>Carregando…</option></select>
+        </label>
+        <label>Rodada
+          <select id="rodada" disabled></select>
+        </label>
+      </div>
+      <p id="aviso-site" class="nota escondido"></p>
+      <ul id="partidas" class="lista-partidas"></ul>
+      <div class="acoes-linha">
+        <button class="secundario" id="marcar-pendentes">Marcar pendentes</button>
+        <button class="secundario" id="desmarcar-todos">Desmarcar todos</button>
+        <span class="espaco"></span>
+        <button class="primario" id="adicionar-marcados" disabled>Adicionar à fila</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <h2>Jogo avulso</h2>
+      <p class="nota">Para amistoso ou jogo que não está no site.</p>
+      <div class="linha-campos">
+        <label>Casa <select id="avulso-casa"></select></label>
+        <label>Fora <select id="avulso-fora"></select></label>
+        <label>Competição <input id="avulso-competicao" placeholder="opcional"></label>
+      </div>
+      <div class="acoes-linha">
+        <span class="espaco"></span>
+        <button class="secundario" id="adicionar-avulso">Adicionar à fila</button>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao-topo">
+        <h2>Fila de jogos <span id="contagem-fila" class="contador">0</span></h2>
+        <div class="grupo-botoes">
+          <button class="fantasma" id="tirar-gravados">Tirar os gravados</button>
+          <button class="fantasma perigo" id="limpar-fila">Limpar</button>
+        </div>
+      </div>
+      <p class="nota">É a ordem em que o PES vai jogar.</p>
+      <ol id="fila" class="lista-fila"></ol>
+    </div>
+  </section>
+
+  <!-- ============================== VIDEOS ============================== -->
+  <section class="painel-aba escondido" id="aba-videos">
+    <div class="cartao">
+      <div class="cartao-topo">
+        <h2>Pasta de vídeos</h2>
+        <button class="fantasma" id="recarregar-videos">Atualizar</button>
+      </div>
+      <p class="nota" id="pasta-videos"></p>
+      <div class="tabela-rolagem">
+        <table class="tabela">
+          <thead><tr><th>Jogo</th><th>Resultado lido</th><th>Situação</th></tr></thead>
+          <tbody id="videos"></tbody>
+        </table>
+      </div>
+      <p class="nota">Só a raiz da pasta: o que você move para <code>Enviados</code> não aparece aqui.
+        Um <code>.json</code> em <b>revisar</b> precisa ser corrigido na mão (e o status trocado para <code>"ok"</code>) antes de enviar.</p>
+    </div>
+  </section>
+
+  <!-- ============================== CONFIG ============================== -->
+  <section class="painel-aba escondido" id="aba-config">
+    <form class="cartao" id="form-config" autocomplete="off">
+      <h2>Caminhos deste PC</h2>
+      <p class="nota">Gravado em <code id="arquivo-ini"></code>. Esse arquivo é só seu e não vai para o GitHub.
+        Pode usar <code>\</code> normalmente; <code>~</code> é a sua pasta de usuário.</p>
+
+      <div class="campo" data-campo="pasta_pes">
+        <label for="pasta_pes">Pasta do PES <small>onde está o PES2021.exe</small></label>
+        <input id="pasta_pes" name="pasta_pes" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+      <div class="campo" data-campo="pasta_sider">
+        <label for="pasta_sider">Pasta do sider <small>onde está o sider.exe</small></label>
+        <input id="pasta_sider" name="pasta_sider" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+      <div class="campo" data-campo="pasta_videos">
+        <label for="pasta_videos">Pasta dos vídeos <small>onde a NVIDIA (Alt+F9) salva as gravações</small></label>
+        <input id="pasta_videos" name="pasta_videos" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+
+      <h2 class="separado">Site da liga</h2>
+      <div class="campo" data-campo="url">
+        <label for="url">Endereço do site</label>
+        <input id="url" name="url" spellcheck="false" placeholder="https://...">
+        <span class="conferencia"></span>
+      </div>
+      <div class="campo" data-campo="token">
+        <label for="token">Token de admin <small>peça ao admin do site</small></label>
+        <input id="token" name="token" type="password" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+      <div class="campo" data-campo="base_jogadores">
+        <label for="base_jogadores">Base de jogadores <small>pes-jogadores.json.gz, do repositório do site (opcional)</small></label>
+        <input id="base_jogadores" name="base_jogadores" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+
+      <div class="acoes-linha">
+        <span id="config-salva" class="nota"></span>
+        <span class="espaco"></span>
+        <button type="submit" class="primario">Salvar</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ============================== ACOES ============================== -->
+  <aside class="lateral">
+    <div class="cartao">
+      <h2>Ações</h2>
+
+      <button class="acao" id="acao-rodar">
+        <span class="acao-titulo">Rodar jogos</span>
+        <span class="acao-detalhe" id="detalhe-rodar">fila vazia</span>
+      </button>
+      <p class="nota alerta">Depois do clique o PES vem para a frente sozinho.
+        <b>Não mexa no mouse nem no teclado</b> até acabar.</p>
+
+      <button class="acao" id="acao-extrair">
+        <span class="acao-titulo">Extrair eventos</span>
+        <span class="acao-detalhe">lê o fim dos vídeos que ainda não têm .json</span>
+      </button>
+
+      <div class="par-botoes">
+        <button class="acao" id="acao-simular">
+          <span class="acao-titulo">Simular envio</span>
+          <span class="acao-detalhe">só mostra o que iria</span>
+        </button>
+        <button class="acao" id="acao-enviar">
+          <span class="acao-titulo">Enviar resultados</span>
+          <span class="acao-detalhe">manda para o site</span>
+        </button>
+      </div>
+
+      <button class="perigo-cheio escondido" id="acao-parar">Parar</button>
+    </div>
+
+    <div class="cartao console-cartao">
+      <div class="cartao-topo">
+        <h2 id="titulo-console">Saída</h2>
+        <label class="rolar"><input type="checkbox" id="rolar-sozinho" checked> rolar sozinho</label>
+      </div>
+      <pre id="console" class="console" aria-live="polite">Nenhuma tarefa rodou ainda.</pre>
+      <div id="fotos" class="fotos"></div>
+    </div>
+  </aside>
+</main>
+
+<div id="aviso" class="toast escondido" role="status"></div>
+
+<script src="painel.js"></script>
+</body>
+</html>

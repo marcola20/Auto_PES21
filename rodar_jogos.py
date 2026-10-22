@@ -39,6 +39,7 @@ SEGUNDOS_ESPERAR_REPLAY = 50
 
 
 SEGUNDOS_TELA_PARADA = 60
+TENTATIVAS_RECONHECER_PES = 3    # --auto: leituras antes de dizer "tela desconhecida"
 PASTA_DIAGNOSTICO = "diagnostico_travou"
 
 VEZES_BAIXO_NAS_NOTAS = 5        # a aba inicial (Pontuacao dos jogadores)
@@ -62,6 +63,7 @@ SEGUNDOS_MOSTRANDO_EVENTOS = 8   # quanto tempo deixar a aba na tela
 
 # ==========================================================================
 
+import json
 import sys
 import time
 from pathlib import Path
@@ -789,6 +791,97 @@ def jogos_da_fila() -> list:
     return [(j[0], j[1], j[2] if len(j) > 2 else None) for j in JOGOS]
 
 
+def carregar_fila(caminho: str) -> list:
+    """Le a fila de um .json (o que o painel.py grava), no formato de JOGOS.
+
+    [{"casa": "Santos", "fora": "Grêmio", "competicao": "Copa do Brasil"}, ...]
+    """
+    with open(caminho, encoding="utf-8") as f:
+        dados = json.load(f)
+    return [(j["casa"], j["fora"], j.get("competicao")) for j in dados]
+
+
+def valor_do_argumento(nome: str):
+    """'--fila x.json' -> 'x.json'; None se o argumento nao veio."""
+    if nome in sys.argv:
+        i = sys.argv.index(nome)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return None
+
+
+def onde_o_pes_esta() -> tuple:
+    """Olha (sem apertar nada) em que estado o PES esta. Devolve (estado, info):
+
+        'fechado'      o processo nao existe              -> abrir do zero
+        'times'        selecao de times ou de ligas       -> comecar direto
+        'abertura'     titulo, aviso, menu, escolha lado  -> navegar dali
+        'fora_de_foco' aberto, mas nao veio para a frente -> parar
+        'desconhecido' aberto numa tela que nao conheco   -> parar (info = foto)
+
+    Existe para o painel: quem clica em "Rodar jogos" nao precisa saber se
+    o jogo tem que estar fechado ou na lista de times. Mas so sigo de uma
+    tela que eu RECONHECO - numa desconhecida (partida rolando, editor,
+    outro menu) qualquer tecla pode fazer estrago, entao paro com foto.
+
+    Varias leituras antes de concluir: em tela cheia o ImageGrab as vezes
+    devolve um quadro vazio, e um so viraria "tela desconhecida" a toa.
+    """
+    pids = abrir_jogo.pids_do_processo(abrir_jogo.PES_EXE)
+    if not pids:
+        return "fechado", None
+    # A foto e da tela visivel: com o PES atras, eu fotografaria o navegador.
+    if not abrir_jogo.em_primeiro_plano(pids) and not abrir_jogo.trazer_para_frente(pids):
+        return "fora_de_foco", None
+
+    templates = abrir_jogo.carregar_templates()
+    for _ in range(TENTATIVAS_RECONHECER_PES):
+        nome, _s = navegar.qual_time_esta_selecionado("casa")
+        if nome:
+            return "times", f"lista de times do painel casa, cursor em '{nome}'"
+        # Os tres niveis de onde preparar_painel_casa() sabe voltar sozinho.
+        if tela_confere(TEMPLATE_LIGA_CASA, visao.REGIAO_NOME_CASA)[0]:
+            return "times", "lista de ligas do painel casa"
+        nome, _s = navegar.qual_time_esta_selecionado("fora")
+        if nome:
+            return "times", f"lista de times do painel fora, cursor em '{nome}'"
+        if tela_confere(TEMPLATE_LIGA, visao.REGIAO_NOME_FORA)[0]:
+            return "times", "lista de ligas do painel fora"
+
+        tela = abrir_jogo.reconhecer(visao.capturar_tela(), templates)
+        if tela:
+            return "abertura", tela
+        time.sleep(1)
+
+    return "desconhecido", salvar_diagnostico(visao.capturar_tela(), "pes_tela_desconhecida")
+
+
+def preparar_pelo_estado() -> bool:
+    """Modo --auto: decide sozinho entre abrir o jogo, navegar ou comecar."""
+    print("\nModo --auto: conferindo se o PES esta aberto e em que tela.")
+    estado, info = onde_o_pes_esta()
+
+    if estado == "fechado":
+        print("O PES esta fechado - abrindo do zero.\n")
+        return abrir_jogo.abrir_ate_as_ligas()
+    if estado == "abertura":
+        print(f"O PES esta aberto, na tela '{info}' - navegando ate os times.\n")
+        return abrir_jogo.navegar_ate_as_ligas(abrir_jogo.carregar_templates())
+    if estado == "times":
+        print(f"O PES esta pronto: {info}.\n")
+        return True
+    if estado == "fora_de_foco":
+        print("ERRO: o PES esta aberto, mas nao consegui trazer a janela dele")
+        print("para a frente. Clique no PES uma vez e tente de novo.")
+        return False
+
+    print("ERRO: o PES esta aberto numa tela que eu nao reconheco, entao nao")
+    print("apertei nada. Leve o jogo para a lista de times (ou feche o PES)")
+    print("e tente de novo.")
+    detalhe(f"foto do que estava na tela: {info}")
+    return False
+
+
 def conferir_preparo(pasta: Path) -> bool:
     """Checagens antes de comecar, para falhar cedo em vez de no meio do loop."""
     if not pasta.is_dir():
@@ -815,7 +908,17 @@ def conferir_preparo(pasta: Path) -> bool:
 
 
 def main() -> int:
+    global JOGOS
     pasta = Path(PASTA_GRAVACOES)
+
+    arquivo_fila = valor_do_argumento("--fila")
+    if arquivo_fila:
+        try:
+            JOGOS = carregar_fila(arquivo_fila)
+        except (OSError, ValueError, KeyError) as erro:
+            print(f"ERRO: nao consegui ler a fila {arquivo_fila}: {erro}")
+            return 1
+    origem = "da fila" if arquivo_fila else "da lista JOGOS"
 
     print("=" * 66)
     print("  AUTO_PES21  --  loop completo")
@@ -836,6 +939,10 @@ def main() -> int:
         print("\nModo --abrir: o PES precisa estar FECHADO.\n")
         if not abrir_jogo.abrir_ate_as_ligas():
             print("\nPAREI antes do primeiro jogo: o jogo nao chegou nos paineis de liga.")
+            return 1
+    elif "--auto" in sys.argv:
+        if not preparar_pelo_estado():
+            print("\nPAREI antes do primeiro jogo.")
             return 1
     else:
         print("\nO PES precisa estar na LISTA DE TIMES do painel 'Em casa', com o")
@@ -859,7 +966,7 @@ def main() -> int:
                 # foi so na passagem para o proximo. Nao precisa regravar.
                 print(f"  O video do jogo {i} FOI salvo - a falha foi na volta")
                 print(f"  para a selecao de times. Nao precisa refazer esse jogo.")
-                print(f"  Para continuar, tire os {i} primeiros da lista JOGOS.")
+                print(f"  Para continuar, tire os {i} primeiros {origem}.")
             print("  Confira o estado da gravacao na NVIDIA antes de rodar de novo.")
             return 1
 
