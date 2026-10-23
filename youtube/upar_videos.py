@@ -42,8 +42,11 @@ import json
 import re
 import struct
 import shutil
+import sqlite3
 import sys
+import tempfile
 import time
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -429,6 +432,36 @@ def mover_para_enviados(video: Path) -> None:
 # monta a tela e devolve as respostas num .json com --plano.
 
 
+def situacao_do_login() -> str:
+    """'logado', 'sem_login' ou 'desconhecido', sem abrir o Chrome.
+
+    Olha se o perfil do robo tem os cookies de sessao do YouTube (LOGIN_INFO,
+    __Secure-3PSID) ainda validos. So os NOMES e a validade: o valor e
+    criptografado e nem e lido. Nao garante que o canal e o certo nem que o
+    Google nao derrubou a sessao, mas separa o perfil novo, nunca logado, do
+    que ja entrou - que e o que o painel precisa para nao pedir login a toa.
+    """
+    cookies = config.PERFIL_CHROME / "Default" / "Network" / "Cookies"
+    if not cookies.is_file():
+        return "sem_login"
+    consulta = ("select expires_utc, has_expires from cookies "
+                "where host_key like '%youtube.com' and name in ('LOGIN_INFO', '__Secure-3PSID')")
+    # Le uma copia: com o Chrome do robo aberto, o arquivo pode estar travado.
+    copia = Path(tempfile.gettempdir()) / "auto_pes21_cookies.db"
+    try:
+        shutil.copyfile(cookies, copia)
+        with closing(sqlite3.connect(f"file:{copia.as_posix()}?mode=ro", uri=True)) as banco:
+            linhas = banco.execute(consulta).fetchall()
+    except (OSError, sqlite3.Error):
+        return "desconhecido"
+    finally:
+        copia.unlink(missing_ok=True)
+    # expires_utc conta microssegundos desde 1601 (o relogio do Windows).
+    agora = (time.time() + 11_644_473_600) * 1_000_000
+    validos = [1 for expira, tem_validade in linhas if not tem_validade or expira > agora]
+    return "logado" if validos else "sem_login"
+
+
 def listar_em_json() -> int:
     """--listar: competicoes e videos que podem subir, em JSON no stdout."""
     competicoes = [{
@@ -456,7 +489,7 @@ def listar_em_json() -> int:
         "margem_minutos": config.MINUTOS_MARGEM_MINIMA,
         "edicao": config.EDICAO,
         "temporada": config.TEMPORADA,
-        "login_feito": config.PERFIL_CHROME.is_dir(),
+        "login": situacao_do_login(),
         "rpa_antigo": importar_rpa.situacao(),
     }, ensure_ascii=False))
     return 0

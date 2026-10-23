@@ -380,12 +380,21 @@ async function carregarYoutube() {
     lista.push(criar("div", { class: "alerta-caixa" },
       criar("span", {}, `Achei o RPA_Youtube antigo em ${rpa.pasta}. Dá para trazer ${coisas.join(" e ")} para cá, sem fazer o login de novo.`),
       criar("button", { class: "primario", onclick: importarRpa }, "Trazer do RPA_Youtube")));
-  } else if (!dados.login_feito) {
+  } else if (dados.login === "sem_login") {
     lista.push(criar("div", { class: "alerta-caixa" },
       criar("span", {}, "Ainda não entrou na conta do canal neste PC. Clique em “Entrar na conta do canal”, faça o login no Chrome que abrir, confira o canal e feche o Chrome."),
     ));
   }
   alertas.replaceChildren(...lista);
+
+  // Logado (ou sem como saber): o botao so abre o Studio, para conferir o canal.
+  const semLogin = dados.login === "sem_login";
+  const botaoLogin = $("#yt-login");
+  botaoLogin.textContent = semLogin ? "Entrar na conta do canal" : "Abrir o Studio";
+  botaoLogin.title = semLogin
+    ? "Abre o Chrome do robô para entrar na conta do canal"
+    : "Abre o Chrome do robô no YouTube Studio, para conferir o canal ou trocar de conta";
+  $("#yt-conectado").classList.toggle("escondido", dados.login !== "logado");
 
   const select = $("#yt-competicao");
   const atual = select.value || (() => { try { return localStorage.getItem("yt-competicao"); } catch { return null; } })();
