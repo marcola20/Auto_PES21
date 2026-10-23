@@ -70,6 +70,9 @@ NOME_NA_BASE = {"Sport": "Sport Recife"}
 CAMINHO_ELENCOS_SITE = "/api/teams/roster"
 SEGUNDOS_TIMEOUT_SITE = 90
 CACHE_ELENCOS_SITE = "elencos_site.json"   # ao lado deste script
+# Competicao de cada video, anotada pelo rodar_jogos.py a partir da fila do
+# painel (ao lado deste script). Sem ela, a serie sai so pelos times.
+ARQUIVO_GRAVACOES = "gravacoes.json"
 
 # Quanto do final do video olhar. No video de referencia a tela "Fim de jogo"
 # com os botoes ocupa so os ultimos ~15s (antes disso vem o replay dos
@@ -1538,9 +1541,27 @@ def juntar_notas_repetidas(notas: dict, avisos: Avisos):
         notas[lado] = list(unicos.values())
 
 
-def serie_da_partida(casa, fora):
-    """Mesma regra do loop (rodar_jogos.nome_do_video): so ha serie quando os
-    dois times sao da mesma. A x B, ou time que so completa a liga -> None."""
+def competicao_gravada(gravado_em: str):
+    """A competicao que a fila deu a este video (rodar_jogos.anotar_gravacao),
+    ou None: jogo avulso sem competicao, ou video de antes da anotacao."""
+    caminho = Path(__file__).with_name(ARQUIVO_GRAVACOES)
+    try:
+        anotadas = json.loads(caminho.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return (anotadas.get(gravado_em) or {}).get("competicao")
+
+
+def serie_da_partida(casa, fora, competicao=None):
+    """Com a competicao da fila, a serie vem do nome dela ("Brasileirao -
+    Serie B 2010" -> "B"; "Copa do Brasil 2010" -> None): os mesmos dois
+    times da Serie B tambem se enfrentam na Copa.
+
+    Sem ela, a regra pelos times: so ha serie quando os dois sao da mesma.
+    A x B, ou time que so completa a liga -> None."""
+    if competicao:
+        m = re.search(r"\bs[eé]rie\s+([ab])\b", competicao, re.IGNORECASE)
+        return m.group(1).upper() if m else None
     try:
         serie = times.serie_do_time(casa)
         return serie if serie and serie == times.serie_do_time(fora) else None
@@ -1579,12 +1600,15 @@ def conferir_notas(notas: dict, eventos: list, avisos: Avisos):
 
 def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
     avisos = Avisos()
+    # Data do arquivo (renomear nao muda): o site reconhece o mesmo video
+    # num reenvio mesmo que o nome se repita em outro jogo.
+    gravado_em = datetime.fromtimestamp(video.stat().st_mtime).isoformat(timespec="seconds")
+    competicao = competicao_gravada(gravado_em)
     resultado = {
         "video": video.name,
-        # Data do arquivo (renomear nao muda): o site reconhece o mesmo video
-        # num reenvio mesmo que o nome se repita em outro jogo.
-        "gravado_em": datetime.fromtimestamp(video.stat().st_mtime).isoformat(timespec="seconds"),
+        "gravado_em": gravado_em,
         "extraido_em": datetime.now().isoformat(timespec="seconds"),
+        "competicao": competicao,
         "serie": None,
         "rodada": rodada_do_nome(video.name),
         "casa": {"time": None, "gols": None},
@@ -1643,7 +1667,7 @@ def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
 
     return {
         **resultado,
-        "serie": serie_da_partida(casa, fora),
+        "serie": serie_da_partida(casa, fora, competicao),
         "casa": {"time": casa, "gols": cab["casa"][1]},
         "fora": {"time": fora, "gols": cab["fora"][1]},
         "eventos": eventos,

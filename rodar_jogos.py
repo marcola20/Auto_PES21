@@ -41,6 +41,7 @@ SEGUNDOS_ESPERAR_REPLAY = 50
 SEGUNDOS_TELA_PARADA = 60
 TENTATIVAS_RECONHECER_PES = 3    # --auto: leituras antes de dizer "tela desconhecida"
 PASTA_DIAGNOSTICO = "diagnostico_travou"
+ARQUIVO_GRAVACOES = "gravacoes.json"   # competicao de cada video, para o extrator
 
 VEZES_BAIXO_NAS_NOTAS = 5        # a aba inicial (Pontuacao dos jogadores)
                                  # mostra so 11 linhas: rolar para os
@@ -64,8 +65,10 @@ SEGUNDOS_MOSTRANDO_EVENTOS = 8   # quanto tempo deixar a aba na tela
 # ==========================================================================
 
 import json
+import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
@@ -173,6 +176,26 @@ def renomear_video(caminho: Path, casa: str, fora: str):
             time.sleep(SEGUNDOS_ENTRE_TENTATIVAS_RENOMEAR)
     detalhe(f"(nao consegui renomear o video: {ultimo_erro})")
     return None
+
+
+def anotar_gravacao(video: Path, competicao) -> None:
+    """Anota de que competicao e o video, para o extrair_eventos.py.
+
+    Pelo nome nao da para saber: Parana x Vitoria pode ser Serie B ou Copa.
+    A chave e a data do arquivo (o "gravado_em" do .json), que nao muda ao
+    renomear nem ao mover para Enviados/. NUNCA levanta erro, como o
+    renomear_video: sem a anotacao o extrator so cai na regra pelos times.
+    """
+    caminho = Path(__file__).resolve().parent / ARQUIVO_GRAVACOES
+    try:
+        gravado_em = datetime.fromtimestamp(video.stat().st_mtime).isoformat(timespec="seconds")
+        anotadas = json.loads(caminho.read_text(encoding="utf-8")) if caminho.exists() else {}
+        anotadas[gravado_em] = {"video": video.name, "competicao": competicao}
+        temporario = caminho.with_suffix(".tmp")
+        temporario.write_text(json.dumps(anotadas, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporario, caminho)
+    except (OSError, ValueError) as erro:
+        detalhe(f"(nao consegui anotar a competicao do video: {erro})")
 
 
 # --------------------------------------------------------------------------
@@ -725,7 +748,7 @@ def voltar_para_selecao() -> bool:
 
 
 def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
-                  pasta: Path) -> tuple:
+                  pasta: Path, competicao=None) -> tuple:
     """Roda uma partida. Devolve (seguiu_tudo_bem, gravou_o_video).
 
     Sao DUAS informacoes porque elas falham separado: a partida pode ter sido
@@ -770,6 +793,7 @@ def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
     renomeado = renomear_video(novo, casa, fora)
     if renomeado is not None:
         detalhe(f"Renomeado para: {renomeado.name}")
+    anotar_gravacao(renomeado or novo, competicao)
 
     # No ultimo jogo nao ha proximo, entao nao precisa voltar para a selecao.
     if indice < total and not voltar_para_selecao():
@@ -951,8 +975,8 @@ def main() -> int:
         contagem_regressiva(SEGUNDOS_CONTAGEM)
 
     gravados = 0
-    for i, (casa, fora, _competicao) in enumerate(jogos_da_fila(), 1):
-        seguiu, gravou = rodar_um_jogo(casa, fora, i, len(JOGOS), pasta)
+    for i, (casa, fora, competicao) in enumerate(jogos_da_fila(), 1):
+        seguiu, gravou = rodar_um_jogo(casa, fora, i, len(JOGOS), pasta, competicao)
         if gravou:
             gravados += 1
 

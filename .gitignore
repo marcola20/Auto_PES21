@@ -26,5 +26,8 @@ caminhos.ini
 # Fila de jogos montada no painel.py (estado desta maquina).
 fila_jogos.json
 fila_jogos.tmp
+# Competicao de cada video gravado (rodar_jogos.py -> extrair_eventos.py).
+gravacoes.json
+gravacoes.tmp
 caminhos.tmp
 plano_youtube.json
