@@ -23,6 +23,7 @@ Uso:
 
 PORTA = 8021              # se estiver ocupada, tenta as proximas
 PORTAS_A_TENTAR = 10
+SEGUNDOS_ESPERAR_OUTRO_PAINEL = 15   # porta ocupada: espera o painel que esta subindo
 
 # O site fica numa hospedagem gratuita que dorme: a primeira chamada pode
 # levar quase um minuto para acordar o servidor.
@@ -74,9 +75,21 @@ CAMPOS_INI = [
     ("youtube", "temporada"),
 ]
 
+# Os scripts rodam com o python.exe mesmo quando o painel foi aberto pelo
+# atalho (pythonw.exe, sem janela preta): o pythonw nao tem terminal, e a saida
+# dos scripts e justamente o que o painel mostra.
+_pythonw = Path(sys.executable)
+if _pythonw.name.lower() == "pythonw.exe" and _pythonw.with_name("python.exe").is_file():
+    PYTHON = str(_pythonw.with_name("python.exe"))
+else:
+    PYTHON = sys.executable
+
+# Para o atalho achar um painel ja aberto em vez de abrir outro.
+ID_DO_PAINEL = "auto_pes21"
+
 TIPOS = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".js": "text/javascript; charset=utf-8", ".png": "image/png",
-         ".svg": "image/svg+xml"}
+         ".svg": "image/svg+xml", ".ico": "image/x-icon"}
 
 
 # --------------------------------------------------------------------------
@@ -407,7 +420,7 @@ class Tarefa:
             self.linhas, self.provisoria, self.resto = [], False, ""
             self.codigo, self.parada = None, False
             self.inicio, self.fim = time.time(), None
-            comando = [sys.executable, "-u", TAREFAS[nome]["script"], *argumentos]
+            comando = [PYTHON, "-u", TAREFAS[nome]["script"], *argumentos]
             self._anotar(f"[painel] {' '.join(comando[2:])}\n")
             ambiente = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
             self.processo = subprocess.Popen(
@@ -510,7 +523,7 @@ def situacao_do_youtube() -> dict:
     proprio upar_videos.py (assim a regra de quais videos podem subir fica
     num lugar so)."""
     resultado = subprocess.run(
-        [sys.executable, "youtube/upar_videos.py", "--listar"],
+        [PYTHON, "youtube/upar_videos.py", "--listar"],
         cwd=PASTA_PROJETO, capture_output=True, timeout=60,
         env=dict(os.environ, PYTHONIOENCODING="utf-8"),
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -582,6 +595,8 @@ class Pedido(BaseHTTPRequestHandler):
         try:
             if rota == "/api/config":
                 return self._json(config_para_pagina())
+            if rota == "/api/ping":
+                return self._json({"app": ID_DO_PAINEL})
             if rota == "/api/youtube":
                 return self._json(situacao_do_youtube())
             if rota == "/api/times":
@@ -647,32 +662,89 @@ class Pedido(BaseHTTPRequestHandler):
             if rota == "/api/tarefa/parar":
                 tarefa.parar()
                 return self._json({"ok": True})
-        except (ValueError, KeyError, RuntimeError) as erro:
+            if rota == "/api/atalho":
+                import criar_atalho
+                return self._json({"caminho": str(criar_atalho.criar_atalho())})
+            if rota == "/api/fechar":
+                if tarefa.rodando():
+                    if not pedido.get("forcar"):
+                        return self._erro(f"{tarefa.titulo} ainda esta rodando.", 409)
+                    tarefa.parar()
+                # Em outra thread: shutdown() espera este pedido terminar.
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return self._json({"ok": True})
+        except (ValueError, KeyError, RuntimeError, OSError) as erro:
             return self._erro(str(erro))
         return self._erro("Nao encontrado.", 404)
 
 
-def subir_servidor() -> ThreadingHTTPServer:
-    for porta in range(PORTA, PORTA + PORTAS_A_TENTAR):
+class Servidor(ThreadingHTTPServer):
+    # No Windows, SO_REUSEADDR deixa DOIS programas ouvirem a mesma porta: um
+    # segundo painel subiria calado em cima do primeiro. Sem ele, a porta
+    # ocupada da erro e eu tento a proxima.
+    allow_reuse_address = False
+    daemon_threads = True
+
+
+def avisar(mensagem: str) -> None:
+    """print no terminal; aberto pelo atalho (pythonw, sem terminal), uma
+    caixa de mensagem - senao o erro sumiria sem ninguem ver."""
+    if sys.stdout is not None:
+        print(mensagem)
+        return
+    import ctypes
+    ctypes.windll.user32.MessageBoxW(None, mensagem, "Auto PES21", 0x10)
+
+
+def e_o_painel(porta: int, segundos: float) -> bool:
+    """True se quem esta na porta e um painel deste projeto.
+
+    Espera um pouco: com dois cliques seguidos no atalho, o primeiro painel
+    ja pegou a porta mas ainda pode nao estar respondendo.
+    """
+    limite = time.time() + segundos
+    while True:
         try:
-            return ThreadingHTTPServer(("127.0.0.1", porta), Pedido)
-        except OSError:
-            continue
-    print(f"ERRO: nenhuma porta livre entre {PORTA} e {PORTA + PORTAS_A_TENTAR - 1}.")
-    sys.exit(1)
+            with urllib.request.urlopen(f"http://127.0.0.1:{porta}/api/ping", timeout=1) as resposta:
+                return json.loads(resposta.read()).get("app") == ID_DO_PAINEL
+        except (OSError, ValueError):
+            if time.time() >= limite:
+                return False
+            time.sleep(0.3)
 
 
 def main() -> int:
-    sys.stdout.reconfigure(errors="replace")
+    if sys.stdout is not None:
+        sys.stdout.reconfigure(errors="replace")
     os.chdir(PASTA_PROJETO)      # os scripts procuram templates/ a partir daqui
-    servidor = subir_servidor()
+    abrir = "--sem-navegador" not in sys.argv
+
+    # Quem decide e a porta: o primeiro a pegar e o painel. Se ela ja esta com
+    # um painel (clicou no atalho de novo), so abro o navegador nele - um
+    # segundo painel nao veria a tarefa do primeiro. Se esta com outro
+    # programa, tento a proxima.
+    servidor = None
+    for porta in range(PORTA, PORTA + PORTAS_A_TENTAR):
+        try:
+            servidor = Servidor(("127.0.0.1", porta), Pedido)
+            break
+        except OSError:
+            if e_o_painel(porta, SEGUNDOS_ESPERAR_OUTRO_PAINEL):
+                print(f"O painel ja esta aberto em http://127.0.0.1:{porta}")
+                if abrir:
+                    webbrowser.open(f"http://127.0.0.1:{porta}")
+                return 0
+    if servidor is None:
+        avisar(f"ERRO: nenhuma porta livre entre {PORTA} e {PORTA + PORTAS_A_TENTAR - 1}.")
+        return 1
     endereco = f"http://127.0.0.1:{servidor.server_address[1]}"
+    # Sem terminal (atalho) estes print nao vao a lugar nenhum, e tudo bem.
     print("=" * 66)
     print("  AUTO_PES21  --  painel")
     print("=" * 66)
     print(f"\n  Aberto em {endereco}")
     print("  Deixe esta janela aberta enquanto usa o painel (Ctrl+C fecha).\n")
-    if "--sem-navegador" not in sys.argv:
+    if abrir:
         webbrowser.open(endereco)
     try:
         servidor.serve_forever()

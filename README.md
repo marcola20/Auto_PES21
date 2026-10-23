@@ -118,12 +118,21 @@ python teste_gravacao.py
 
 ### 2.0 Pelo painel (o jeito fácil)
 
-```
-python painel.py
-```
+Clique duas vezes em **`Abrir painel.bat`**, na pasta do projeto. O painel
+abre no navegador (`http://127.0.0.1:8021`), sem janela preta.
 
-Abre o painel no navegador (`http://127.0.0.1:8021`). Deixe a janela do
-terminal aberta enquanto usa; Ctrl+C nela fecha o painel.
+Para não precisar nem abrir a pasta: no painel, aba **Configuração**, clique
+em **Criar atalho na Área de Trabalho** (ou rode `python criar_atalho.py`).
+Aparece o atalho **Auto PES21**, com ícone de bola, que abre o painel com um
+clique duplo. Ele sempre abre a versão atual do código, então continua
+valendo depois de um `git pull`. Só precisa ser criado de novo se o Python
+for reinstalado em outra pasta.
+
+- Clicar no atalho com o painel já aberto só abre a página de novo: não sobe
+  um segundo painel.
+- Para desligar, use **Fechar painel**, no canto de cima. Fechar só a aba do
+  navegador deixa o painel ligado (o atalho abre de novo a mesma página).
+- Pelo terminal também funciona: `python painel.py` (Ctrl+C fecha).
 
 - **Jogos:** escolha a competição e a rodada (vêm do site). Os jogos que
   ainda faltam já vêm marcados; desmarque o que não quiser e clique em

@@ -275,6 +275,14 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .fotos img { width: 100%; border-radius: 8px; border: 1px solid var(--borda); display: block; }
 .fotos figcaption { font-size: 12px; color: var(--suave); margin-top: 4px; }
 
+#fechar-painel { margin-left: -12px; }
+.tela-fechado {
+  position: fixed; inset: 0; z-index: 20;
+  display: grid; place-items: center; padding: 16px;
+  background: var(--fundo);
+}
+.tela-fechado .cartao { max-width: 440px; }
+
 /* ---------------- aviso flutuante ---------------- */
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);

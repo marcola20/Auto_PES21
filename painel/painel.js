@@ -587,6 +587,34 @@ $("#form-config").addEventListener("submit", async (evento) => {
   }
 });
 
+$("#criar-atalho").addEventListener("click", async () => {
+  try {
+    const { caminho } = await api("/api/atalho", {});
+    avisar(`Atalho criado: ${caminho}`);
+  } catch (erro) {
+    avisar(erro.message, true);
+  }
+});
+
+// ------------------------------------------------------------------ fechar o painel
+
+$("#fechar-painel").addEventListener("click", async () => {
+  const rodando = estado.tarefa.rodando;
+  let pergunta = "Fechar o painel? Para abrir de novo, use o atalho Auto PES21.";
+  if (rodando) {
+    pergunta = `${estado.tarefa.titulo} ainda está rodando. Fechar o painel PARA essa tarefa agora.`;
+    if (estado.tarefa.nome === "rodar") pergunta += "\n\nSe estiver no meio de uma partida, a gravação da NVIDIA pode ficar ligada.";
+    pergunta += "\n\nFechar mesmo assim?";
+  }
+  if (!confirm(pergunta)) return;
+  try {
+    await api("/api/fechar", { forcar: rodando });
+    $("#painel-fechado").classList.remove("escondido");
+  } catch (erro) {
+    avisar(erro.message, true);
+  }
+});
+
 // ------------------------------------------------------------------ tarefas
 
 async function iniciar(tarefa, extra = {}) {

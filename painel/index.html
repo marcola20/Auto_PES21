@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Auto PES21</title>
 <link rel="stylesheet" href="painel.css">
+<link rel="icon" href="icone.ico">
 </head>
 <body>
 
@@ -20,7 +21,16 @@
     <button role="tab" data-aba="config">Configuração</button>
   </nav>
   <div id="pilula" class="pilula ociosa">Parado</div>
+  <button class="fantasma" id="fechar-painel" title="Desliga o painel (o atalho abre de novo)">Fechar painel</button>
 </header>
+
+<div id="painel-fechado" class="tela-fechado escondido">
+  <div class="cartao">
+    <h2>Painel fechado</h2>
+    <p class="nota">Pode fechar esta aba. Para abrir de novo, use o atalho <b>Auto PES21</b>
+      na Área de Trabalho (ou <code>Abrir painel.bat</code>, na pasta do projeto).</p>
+  </div>
+</div>
 
 <main class="grade">
 
@@ -200,6 +210,13 @@
         <label for="chrome">Chrome <small>chrome.exe; vazio = procura sozinho</small></label>
         <input id="chrome" name="chrome" spellcheck="false">
         <span class="conferencia"></span>
+      </div>
+
+      <h2 class="separado">Atalho</h2>
+      <p class="nota">Cria na Área de Trabalho o atalho <b>Auto PES21</b>, que abre este painel com um
+        clique duplo, sem janela preta. Se o Python for reinstalado, crie de novo.</p>
+      <div class="acoes-linha">
+        <button type="button" class="secundario" id="criar-atalho">Criar atalho na Área de Trabalho</button>
       </div>
 
       <div class="acoes-linha">
