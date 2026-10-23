@@ -3,7 +3,8 @@ __pycache__/
 
 # PERFIL DO CHROME COM O LOGIN DO CANAL (cookies da conta Google). Nunca pode
 # ir para o GitHub: quem baixasse entraria no canal. Cada um roda login.py.
-perfil_chrome/
+# (o * pega tambem o perfil_chrome.antes_de_importar do importar_rpa.py)
+perfil_chrome*/
 
 # Estado e diagnostico desta maquina, nao codigo.
 historico.csv

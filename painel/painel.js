@@ -373,7 +373,14 @@ async function carregarYoutube() {
       criar("span", {}, "Falta instalar o Playwright, que controla o Chrome. Num terminal, rode: "),
       criar("code", {}, "pip install playwright")));
   }
-  if (!dados.login_feito) {
+  const rpa = dados.rpa_antigo || {};
+  if (rpa.pasta && (rpa.perfil || rpa.historico_novas)) {
+    const coisas = [rpa.perfil ? "o login do canal" : null,
+      rpa.historico_novas ? `${rpa.historico_novas} linha(s) do histórico do que já subiu` : null].filter(Boolean);
+    lista.push(criar("div", { class: "alerta-caixa" },
+      criar("span", {}, `Achei o RPA_Youtube antigo em ${rpa.pasta}. Dá para trazer ${coisas.join(" e ")} para cá, sem fazer o login de novo.`),
+      criar("button", { class: "primario", onclick: importarRpa }, "Trazer do RPA_Youtube")));
+  } else if (!dados.login_feito) {
     lista.push(criar("div", { class: "alerta-caixa" },
       criar("span", {}, "Ainda não entrou na conta do canal neste PC. Clique em “Entrar na conta do canal”, faça o login no Chrome que abrir, confira o canal e feche o Chrome."),
     ));
@@ -390,6 +397,15 @@ async function carregarYoutube() {
   if (!intervalo.value) intervalo.value = dados.intervalo_padrao;
   if (!$("#yt-data").value) sugerirHorario();
   mostrarVideosYoutube();
+}
+
+function importarRpa() {
+  const rpa = estado.yt.dados?.rpa_antigo || {};
+  const aviso = rpa.perfil
+    ? "\n\nO login (perfil_chrome) é MOVIDO de lá para cá: o RPA_Youtube antigo deixa de estar logado. Feche o Chrome do robô antes."
+    : "";
+  if (!confirm(`Trazer do RPA_Youtube em ${rpa.pasta}?${aviso}`)) return;
+  iniciar("youtube_importar", { pasta: rpa.pasta });
 }
 
 function competicaoYoutube() {

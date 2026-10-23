@@ -383,6 +383,7 @@ TAREFAS = {
     "enviar":  {"titulo": "Enviar resultados", "script": "enviar_resultados.py"},
     "youtube": {"titulo": "Subir no YouTube", "script": "youtube/upar_videos.py"},
     "youtube_login": {"titulo": "Entrar na conta do canal", "script": "youtube/login.py"},
+    "youtube_importar": {"titulo": "Trazer do RPA_Youtube", "script": "youtube/importar_rpa.py"},
 }
 
 
@@ -504,6 +505,8 @@ def iniciar_tarefa(pedido: dict) -> None:
         argumentos = ["--auto", "--fila", ARQUIVO_FILA]
     elif nome == "enviar" and pedido.get("simular"):
         argumentos = ["--simular"]
+    elif nome == "youtube_importar" and pedido.get("pasta"):
+        argumentos = [str(pedido["pasta"])]
     elif nome == "youtube":
         # As respostas que o upar_videos.py perguntaria no terminal; ele
         # confere tudo de novo (video ainda na pasta, rodada, horario).

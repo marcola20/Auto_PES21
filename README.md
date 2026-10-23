@@ -273,12 +273,11 @@ python upar_videos.py    # pergunta competição, rodada, ordem e horário
 
 Detalhes (playlists, descrições, capas, opções): [youtube/README.md](youtube/README.md).
 
-**Vindo do RPA_Youtube?** Copie da pasta antiga para `Auto_PES21\youtube\`:
-
-- `historico.csv` — **importante**: é ele que impede subir o mesmo vídeo
-  duas vezes;
-- a pasta `perfil_chrome` — o login do canal (sem ela, é só rodar o
-  `login.py` de novo).
+**Vindo do RPA_Youtube?** Com ele na mesma pasta que o Auto_PES21, a aba
+YouTube do painel mostra o botão **Trazer do RPA_Youtube**, que traz o login
+do canal (`perfil_chrome`) e o `historico.csv` (**importante**: é ele que
+impede subir o mesmo vídeo duas vezes), sem precisar entrar na conta de
+novo. Em outro lugar: `python youtube\importar_rpa.py "C:\caminho\do\RPA_Youtube"`.
 
 O `caminhos.ini` antigo não serve mais: o `chrome` vai para a seção
 `[youtube]` do `caminhos.ini` daqui, junto com `edicao` e `temporada`

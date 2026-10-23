@@ -48,6 +48,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import config
+import importar_rpa
 
 # ==========================================================================
 # PERGUNTAS
@@ -456,6 +457,7 @@ def listar_em_json() -> int:
         "edicao": config.EDICAO,
         "temporada": config.TEMPORADA,
         "login_feito": config.PERFIL_CHROME.is_dir(),
+        "rpa_antigo": importar_rpa.situacao(),
     }, ensure_ascii=False))
     return 0
 

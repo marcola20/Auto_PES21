@@ -53,10 +53,19 @@ na pasta `perfil_chrome/`, que é só sua e **nunca** vai para o GitHub.
 
 Só precisa repetir se o YouTube deslogar.
 
-**Vindo do RPA_Youtube?** Copie da pasta antiga para esta (`youtube/`) o
+**Vindo do RPA_Youtube?** Se ele estiver na mesma pasta que o Auto_PES21
+(por exemplo `D:\Projetos\RPA_Youtube` e `D:\Projetos\Auto_PES21`), a aba
+YouTube do painel mostra o botão **Trazer do RPA_Youtube**: ele junta o
 `historico.csv` (**importante**: é ele que impede subir o mesmo vídeo duas
-vezes) e a pasta `perfil_chrome` (o login; sem ela, é só fazer o login de
-novo).
+vezes) e **move** a pasta `perfil_chrome` (o login), sem precisar entrar na
+conta de novo. Em outro lugar, pelo terminal:
+
+```
+python importar_rpa.py "C:\caminho\do\RPA_Youtube"
+```
+
+Feche o Chrome do robô antes. O RPA_Youtube antigo deixa de estar logado,
+o que não importa: ele não é mais usado.
 
 ### 1.4 Playlists, descrições e capas
 
