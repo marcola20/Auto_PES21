@@ -1,7 +1,12 @@
 """
-config.py  --  RPA_Youtube
+config.py  --  Auto_PES21 / youtube
 
 Tudo que voce pode querer trocar sem mexer no codigo.
+
+O que muda de um PC para outro (pasta dos videos, Chrome) e da temporada
+(edicao e temporada) fica no caminhos.ini do Auto_PES21, um nivel acima, que
+NAO vai para o GitHub. O painel (python painel.py, na pasta de cima) edita
+esse arquivo na aba Configuracao.
 """
 
 import configparser
@@ -10,31 +15,47 @@ import shutil
 import sys
 from pathlib import Path
 
-PASTA_PROJETO = Path(__file__).parent
+PASTA_PROJETO = Path(__file__).resolve().parent
 
 # ==========================================================================
 # CAMINHOS DESTE PC
 # ==========================================================================
 
-# Pastas que mudam de um computador para outro ficam em caminhos.ini, que NAO
-# vai para o GitHub. Sem ele, o arquivo e criado a partir do exemplo e o
-# script para, pedindo para conferir.
-_ARQ_CAMINHOS = PASTA_PROJETO / "caminhos.ini"
+# Um caminhos.ini so para o Auto_PES21 inteiro: a pasta_videos e a mesma da
+# gravacao, e o Chrome, a edicao e a temporada ficam na secao [youtube]. Sem
+# ele, o arquivo e criado a partir do exemplo e o script para, pedindo para
+# conferir.
+_PASTA_RAIZ = PASTA_PROJETO.parent
+_ARQ_CAMINHOS = _PASTA_RAIZ / "caminhos.ini"
 if not _ARQ_CAMINHOS.exists():
-    shutil.copyfile(PASTA_PROJETO / "caminhos.exemplo.ini", _ARQ_CAMINHOS)
+    shutil.copyfile(_PASTA_RAIZ / "caminhos.exemplo.ini", _ARQ_CAMINHOS)
     print(f"Criei o arquivo de caminhos deste PC:\n  {_ARQ_CAMINHOS}\n"
           "Abra ele, ajuste as pastas para o seu computador e rode de novo.")
     sys.exit(1)
 # interpolation=None: "%" em nome de pasta nao vira variavel.
 _ini = configparser.ConfigParser(interpolation=None)
 _ini.read(_ARQ_CAMINHOS, encoding="utf-8")
-_caminhos = _ini["caminhos"]
 
 
-def _caminho(chave: str) -> str:
+def _valor(secao: str, chave: str) -> str:
+    return _ini.get(secao, chave, fallback="").strip().strip('"')
+
+
+def _caminho(secao: str, chave: str) -> str:
     """Valor do caminhos.ini; "~" vira a pasta do usuario. Vazio = ""."""
-    valor = _caminhos.get(chave, "").strip().strip('"')
+    valor = _valor(secao, chave)
     return str(Path(valor).expanduser()) if valor else ""
+
+
+def _numero(chave: str) -> int:
+    """Edicao e temporada: obrigatorias. Um valor velho esquecido aqui iria
+    para o titulo e o nome da playlist de todos os videos, entao sem ele o
+    script para em vez de chutar."""
+    valor = _valor("youtube", chave)
+    if not valor.isdigit():
+        sys.exit(f"ERRO: preencha '{chave}' (um numero) na secao [youtube] de\n"
+                 f"  {_ARQ_CAMINHOS}\n  (ou pelo painel, na aba Configuracao)")
+    return int(valor)
 
 
 def _achar_chrome() -> str:
@@ -53,9 +74,9 @@ def _achar_chrome() -> str:
 
 # So os videos soltos nesta pasta entram. Subpastas (Copa, Enviados...) ficam
 # de fora.
-if not _caminho("pasta_videos"):
+if not _caminho("caminhos", "pasta_videos"):
     sys.exit(f"ERRO: 'pasta_videos' esta vazio em {_ARQ_CAMINHOS}")
-PASTA_VIDEOS = Path(_caminho("pasta_videos"))   # definida em caminhos.ini
+PASTA_VIDEOS = Path(_caminho("caminhos", "pasta_videos"))   # definida em caminhos.ini
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov")
 
 # Depois de programado, o video vai para esta subpasta de PASTA_VIDEOS. Assim
@@ -70,8 +91,9 @@ HISTORICO = PASTA_PROJETO / "historico.csv"
 # CAMPEONATO
 # ==========================================================================
 
-EDICAO = 8
-TEMPORADA = 3
+# No caminhos.ini, secao [youtube] (ou no painel, aba Configuracao).
+EDICAO = _numero("edicao")
+TEMPORADA = _numero("temporada")
 
 # A ordem daqui e a ordem do menu na hora de perguntar.
 # nome     -> vai no fim do titulo do video
@@ -133,7 +155,7 @@ TEMA_ESTREIA = "Esportes"
 # ==========================================================================
 
 # Em branco no caminhos.ini = procura nos lugares de instalacao padrao.
-CHROME = _caminho("chrome") or _achar_chrome()
+CHROME = _caminho("youtube", "chrome") or _achar_chrome()
 
 # Perfil separado do seu Chrome normal. O login do YouTube fica salvo aqui
 # (rode login.py uma vez).

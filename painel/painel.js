@@ -69,6 +69,7 @@ function mostrarAba(nome) {
   document.querySelectorAll(".painel-aba").forEach((s) => s.classList.toggle("escondido", s.id !== `aba-${nome}`));
   if (nome === "videos") carregarVideos();
   if (nome === "config") carregarConfig();
+  if (nome === "youtube") carregarYoutube();
   try { localStorage.setItem("aba", nome); } catch {}
 }
 
@@ -343,6 +344,210 @@ async function carregarVideos() {
 
 $("#recarregar-videos").addEventListener("click", carregarVideos);
 
+// ------------------------------------------------------------------ youtube
+
+estado.yt = { dados: null, itens: [] };
+
+async function carregarYoutube() {
+  const alertas = $("#yt-alertas");
+  let dados;
+  try {
+    dados = await api("/api/youtube");
+  } catch (erro) {
+    alertas.replaceChildren(criar("div", { class: "alerta-caixa erro" }, criar("span", {}, erro.message)));
+    estado.yt.dados = null;
+    mostrarPlanoYoutube();
+    return;
+  }
+  estado.yt.dados = dados;
+
+  // Mantem o que voce ja tinha escolhido para os videos que continuam na pasta.
+  const antes = new Map(estado.yt.itens.map((i) => [i.arquivo, i]));
+  const mantidos = estado.yt.itens.filter((i) => dados.videos.some((v) => v.arquivo === i.arquivo));
+  const novos = dados.videos.filter((v) => !antes.has(v.arquivo)).map((v) => ({ ...v, incluido: true, junto: false }));
+  estado.yt.itens = [...mantidos.map((i) => ({ ...i, ...dados.videos.find((v) => v.arquivo === i.arquivo) })), ...novos];
+
+  const lista = [];
+  if (!dados.playwright) {
+    lista.push(criar("div", { class: "alerta-caixa erro" },
+      criar("span", {}, "Falta instalar o Playwright, que controla o Chrome. Num terminal, rode: "),
+      criar("code", {}, "pip install playwright")));
+  }
+  if (!dados.login_feito) {
+    lista.push(criar("div", { class: "alerta-caixa" },
+      criar("span", {}, "Ainda não entrou na conta do canal neste PC. Clique em “Entrar na conta do canal”, faça o login no Chrome que abrir, confira o canal e feche o Chrome."),
+    ));
+  }
+  alertas.replaceChildren(...lista);
+
+  const select = $("#yt-competicao");
+  const atual = select.value || (() => { try { return localStorage.getItem("yt-competicao"); } catch { return null; } })();
+  select.replaceChildren(...dados.competicoes.map((c) => criar("option", { value: c.chave }, c.nome)));
+  if (atual && dados.competicoes.some((c) => c.chave === atual)) select.value = atual;
+  preencherRodadasYoutube();
+
+  const intervalo = $("#yt-intervalo");
+  if (!intervalo.value) intervalo.value = dados.intervalo_padrao;
+  if (!$("#yt-data").value) sugerirHorario();
+  mostrarVideosYoutube();
+}
+
+function competicaoYoutube() {
+  return estado.yt.dados?.competicoes.find((c) => c.chave === $("#yt-competicao").value);
+}
+
+function preencherRodadasYoutube() {
+  const c = competicaoYoutube();
+  const select = $("#yt-rodada");
+  const atual = select.value;
+  select.replaceChildren(...(c?.rodadas || []).map((r) => criar("option", { value: r.valor }, r.rotulo)));
+  if (c?.rodadas.some((r) => r.valor === atual)) select.value = atual;
+  $("#yt-playlist").textContent = c ? (c.playlist ? `Playlist: ${c.playlist}` : "Esta competição não tem playlist.") : "";
+  try { localStorage.setItem("yt-competicao", $("#yt-competicao").value); } catch {}
+}
+
+function sugerirHorario() {
+  // 18:00 de hoje se ainda der tempo; senao a proxima hora cheia que respeita a margem.
+  const margem = (estado.yt.dados?.margem_minutos || 10) + 5;
+  const agora = new Date();
+  let inicio = new Date(agora); inicio.setHours(18, 0, 0, 0);
+  if (inicio - agora < margem * 60000) {
+    inicio = new Date(agora.getTime() + margem * 60000);
+    inicio.setMinutes(0, 0, 0);
+    inicio.setHours(inicio.getHours() + 1);
+  }
+  const doisDigitos = (n) => String(n).padStart(2, "0");
+  $("#yt-data").value = `${inicio.getFullYear()}-${doisDigitos(inicio.getMonth() + 1)}-${doisDigitos(inicio.getDate())}`;
+  $("#yt-hora").value = `${doisDigitos(inicio.getHours())}:${doisDigitos(inicio.getMinutes())}`;
+}
+
+function mostrarVideosYoutube() {
+  const lista = $("#yt-videos");
+  const itens = estado.yt.itens;
+  $("#yt-contagem").textContent = itens.filter((i) => i.incluido).length;
+  lista.innerHTML = "";
+  if (!itens.length) {
+    const pasta = estado.yt.dados?.pasta || "pasta de vídeos";
+    lista.append(criar("li", { class: "vazio" }, `Nenhum vídeo para subir em ${pasta}. Os que já subiram vão para a subpasta Enviados.`));
+  }
+  let primeiroIncluido = true;
+  itens.forEach((item, i) => {
+    const podeJuntar = item.incluido && !primeiroIncluido;
+    if (item.incluido) primeiroIncluido = false;
+    lista.append(criar("li", { class: `item-fila${item.incluido ? "" : " fora"}${podeJuntar && item.junto ? " colado" : ""}` },
+      criar("input", { type: "checkbox", class: "incluir", checked: item.incluido, title: "Subir este vídeo",
+        "aria-label": `Subir ${item.nome}`, onchange: (e) => { item.incluido = e.target.checked; mostrarVideosYoutube(); } }),
+      criar("div", { class: "jogo-fila" },
+        criar("span", { class: "confronto" }, item.nome),
+        criar("span", { class: "origem" }, `${item.duracao || "--"} · ${item.tamanho_gb} GB · gravado ${item.gravado_em}`)),
+      podeJuntar ? criar("label", { class: "junto", title: "Estreia no mesmo horário do jogo de cima" },
+        criar("input", { type: "checkbox", checked: item.junto, "aria-label": `${item.nome} estreia junto com o de cima`, onchange: (e) => { item.junto = e.target.checked; mostrarVideosYoutube(); } }),
+        "junto") : null,
+      criar("span", { class: "mover" },
+        criar("button", { title: "Subir", "aria-label": "Subir na ordem", disabled: i === 0, onclick: () => moverYoutube(i, -1) }, "↑"),
+        criar("button", { title: "Descer", "aria-label": "Descer na ordem", disabled: i === itens.length - 1, onclick: () => moverYoutube(i, 1) }, "↓"),
+      ),
+    ));
+  });
+  mostrarPlanoYoutube();
+}
+
+function moverYoutube(i, delta) {
+  const [item] = estado.yt.itens.splice(i, 1);
+  estado.yt.itens.splice(i + delta, 0, item);
+  mostrarVideosYoutube();
+}
+
+function montarPlanoYoutube() {
+  const c = competicaoYoutube();
+  const modo = document.querySelector("input[name=yt-modo]:checked").value;
+  const horarios = [];
+  for (const item of estado.yt.itens.filter((i) => i.incluido)) {
+    if (item.junto && horarios.length) horarios[horarios.length - 1].push(item);
+    else horarios.push([item]);
+  }
+  const problemas = [];
+  const rodada = c?.rodadas.find((r) => r.valor === $("#yt-rodada").value);
+  let inicio = null;
+  const intervalo = Number($("#yt-intervalo").value) || estado.yt.dados?.intervalo_padrao || 20;
+  if (modo === "estreia") {
+    inicio = new Date(`${$("#yt-data").value}T${$("#yt-hora").value || "00:00"}`);
+    if (!$("#yt-data").value || !$("#yt-hora").value || isNaN(inicio)) problemas.push("Escolha a data e o horário da primeira estreia.");
+    else {
+      const margem = estado.yt.dados?.margem_minutos || 10;
+      if (inicio - new Date() < margem * 60000) problemas.push(`A primeira estreia precisa ser pelo menos ${margem} min no futuro.`);
+    }
+    if (intervalo < 1 || intervalo > 1440) problemas.push("O intervalo precisa ser de 1 a 1440 minutos.");
+  }
+  if (!horarios.length) problemas.push("Nenhum vídeo marcado para subir.");
+  if (estado.yt.dados && !estado.yt.dados.playwright) problemas.push("Falta instalar o Playwright (pip install playwright).");
+
+  const itens = [];
+  horarios.forEach((grupo, g) => {
+    const quando = inicio && !isNaN(inicio) ? new Date(inicio.getTime() + g * intervalo * 60000) : null;
+    for (const item of grupo) {
+      const titulo = `${item.nome} | ${rodada?.rotulo || "?"} | ${c?.nome || "?"}`;
+      if (titulo.length > 100) problemas.push(`Título com ${titulo.length} caracteres (máximo 100): ${titulo}`);
+      if (/[<>]/.test(titulo)) problemas.push(`O YouTube não aceita < ou > no título: ${titulo}`);
+      itens.push({ titulo, quando, item });
+    }
+  });
+
+  const doisDigitos = (n) => String(n).padStart(2, "0");
+  const plano = c && rodada ? {
+    competicao: c.chave,
+    rodada: rodada.valor,
+    modo,
+    inicio: modo === "estreia" && inicio && !isNaN(inicio)
+      ? `${inicio.getFullYear()}-${doisDigitos(inicio.getMonth() + 1)}-${doisDigitos(inicio.getDate())} ${doisDigitos(inicio.getHours())}:${doisDigitos(inicio.getMinutes())}`
+      : null,
+    intervalo,
+    horarios: horarios.map((grupo) => grupo.map((i) => i.arquivo)),
+  } : null;
+  return { plano, itens, problemas };
+}
+
+function mostrarPlanoYoutube() {
+  const { itens, problemas } = montarPlanoYoutube();
+  const lista = $("#yt-plano");
+  lista.innerHTML = "";
+  for (const { titulo, quando } of itens) {
+    const texto = quando
+      ? quando.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "")
+      : "privado";
+    lista.append(criar("li", {}, criar("span", { class: "quando" }, texto), criar("span", { class: "titulo-yt" }, titulo)));
+  }
+  if (!itens.length) lista.append(criar("li", { class: "nota" }, "Marque os vídeos acima para ver o plano."));
+  $("#yt-problemas").replaceChildren(...problemas.map((p) => criar("li", {}, p)));
+  const n = itens.length;
+  $("#yt-subir").textContent = n ? `Subir ${n} vídeo(s)` : "Subir";
+  atualizarBotoesAcao();
+}
+
+$("#yt-competicao").addEventListener("change", () => { preencherRodadasYoutube(); mostrarPlanoYoutube(); });
+$("#yt-rodada").addEventListener("change", mostrarPlanoYoutube);
+for (const id of ["#yt-data", "#yt-hora", "#yt-intervalo"]) $(id).addEventListener("input", mostrarPlanoYoutube);
+document.querySelectorAll("input[name=yt-modo]").forEach((r) => r.addEventListener("change", () => {
+  $("#yt-campos-estreia").classList.toggle("escondido", r.value === "privado" && r.checked);
+  mostrarPlanoYoutube();
+}));
+$("#yt-recarregar").addEventListener("click", carregarYoutube);
+$("#yt-login").addEventListener("click", () => iniciar("youtube_login"));
+
+$("#yt-simular").addEventListener("click", () => {
+  const { plano, problemas } = montarPlanoYoutube();
+  if (!plano || !plano.horarios.length) return avisar(problemas[0] || "Monte o plano primeiro.", true);
+  iniciar("youtube", { plano, simular: true });
+});
+
+$("#yt-subir").addEventListener("click", () => {
+  const { plano, itens, problemas } = montarPlanoYoutube();
+  if (problemas.length || !plano) return avisar(problemas[0] || "Monte o plano primeiro.", true);
+  const modo = plano.modo === "estreia" ? `como ESTREIA a partir de ${itens[0].quando.toLocaleString("pt-BR")}` : "como PRIVADO";
+  if (!confirm(`Subir ${itens.length} vídeo(s) ${modo}?\n\nO Chrome do robô vai abrir e subir um por um. Não feche ele até acabar.`)) return;
+  iniciar("youtube", { plano });
+});
+
 // ------------------------------------------------------------------ configuracao
 
 async function carregarConfig() {
@@ -482,6 +687,9 @@ function atualizarBotoesAcao() {
   const rodando = estado.tarefa.rodando;
   for (const id of ["#acao-rodar", "#acao-extrair", "#acao-simular", "#acao-enviar"]) $(id).disabled = rodando;
   if (!rodando && !estado.fila.length) $("#acao-rodar").disabled = true;
+  $("#yt-simular").disabled = rodando;
+  $("#yt-login").disabled = rodando;
+  $("#yt-subir").disabled = rodando || (estado.yt ? montarPlanoYoutube().problemas.length > 0 : true);
   $("#acao-parar").classList.toggle("escondido", !rodando);
 }
 
@@ -501,6 +709,7 @@ async function acompanhar() {
     // Acabou: o que mudou na pasta aparece na fila e na aba Videos.
     await carregarFila();
     if (!$("#aba-videos").classList.contains("escondido")) carregarVideos();
+    if (estado.tarefa.nome?.startsWith("youtube")) carregarYoutube();
     if (estado.rodadas.length && estado.tarefa.nome === "rodar") carregarRodadas();
   } catch (erro) {
     avisar(`Perdi o contato com o painel.py: ${erro.message}`, true);

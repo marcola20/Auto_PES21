@@ -1,5 +1,5 @@
 """
-upar_videos.py  --  RPA_Youtube
+upar_videos.py  --  Auto_PES21 / youtube
 
 Sobe os jogos gravados pelo Auto_PES21 para o YouTube, cada um programado como
 ESTREIA (ou como PRIVADO, sem data). Voce escolhe a ordem dos jogos e de
@@ -16,6 +16,10 @@ USO:
   python upar_videos.py --simular    -> so mostra o plano, nao abre o navegador
   python upar_videos.py --pausar     -> para antes de cada "Programar" para voce conferir
   python upar_videos.py --limite 1   -> sobe so os N primeiros (bom para teste)
+
+  O painel (python painel.py, na pasta de cima) usa, sem perguntas:
+  python upar_videos.py --listar               -> competicoes e videos em JSON
+  python upar_videos.py --plano plano.json     -> respostas num .json
 
 O QUE ELE FAZ:
   - Lista os videos soltos em config.PASTA_VIDEOS, em ordem de gravacao, e
@@ -34,6 +38,7 @@ ficado como RASCUNHO no Studio - apague la antes de rodar de novo.
 
 import argparse
 import csv
+import json
 import re
 import struct
 import shutil
@@ -64,17 +69,22 @@ def perguntar_rodada(competicao: str) -> str:
     validas = config.COMPETICOES[competicao]["rodadas"]
     exibicao = ", ".join(rotulo_rodada(v) for v in validas)
     while True:
-        r = input(f"Qual rodada? ({exibicao}): ").strip().lower()
-        r = r.rstrip("ªaº°").strip()
-        if r in ("semifinal", "semi-final"):
-            r = "semi"
-        if r in ("quartas de final", "quartas-de-final", "quarta"):
-            r = "quartas"
-        if r.isdigit():
-            r = str(int(r))
+        r = normalizar_rodada(input(f"Qual rodada? ({exibicao}): "))
         if r in validas:
             return r
         print(f"  Rodada invalida para {config.COMPETICOES[competicao]['nome']}. Opcoes: {exibicao}")
+
+
+def normalizar_rodada(r: str) -> str:
+    """'3ª', ' 03 ', 'Semifinal' -> '3', '3', 'semi': o formato de config.COMPETICOES."""
+    r = str(r).strip().lower().rstrip("ªaº°").strip()
+    if r in ("semifinal", "semi-final"):
+        r = "semi"
+    if r in ("quartas de final", "quartas-de-final", "quarta"):
+        r = "quartas"
+    if r.isdigit():
+        r = str(int(r))
+    return r
 
 
 def rotulo_rodada(rodada: str) -> str:
@@ -269,14 +279,15 @@ def ja_enviados() -> set[tuple[str, int]]:
         return {(linha["arquivo"], int(linha["tamanho"])) for linha in csv.DictReader(f, delimiter=";")}
 
 
-def listar_videos() -> list[Path]:
+def listar_videos(falar: bool = True) -> list[Path]:
     enviados = ja_enviados()
     videos = []
     for arq in config.PASTA_VIDEOS.iterdir():
         if not arq.is_file() or arq.suffix.lower() not in config.EXTENSOES_VIDEO:
             continue
         if (arq.name, arq.stat().st_size) in enviados:
-            print(f"  (pulando {arq.name}: ja consta no historico.csv)")
+            if falar:
+                print(f"  (pulando {arq.name}: ja consta no historico.csv)")
             continue
         videos.append(arq)
     return sorted(videos, key=lambda v: v.stat().st_mtime)
@@ -411,6 +422,97 @@ def mover_para_enviados(video: Path) -> None:
 
 
 # ==========================================================================
+# SEM PERGUNTAS (o painel do Auto_PES21)
+# ==========================================================================
+# O painel nao tem como responder input(): ele pede a lista com --listar,
+# monta a tela e devolve as respostas num .json com --plano.
+
+
+def listar_em_json() -> int:
+    """--listar: competicoes e videos que podem subir, em JSON no stdout."""
+    competicoes = [{
+        "chave": chave,
+        "nome": c["nome"],
+        "playlist": c["playlist"],
+        "rodadas": [{"valor": r, "rotulo": rotulo_rodada(r)} for r in c["rodadas"]],
+    } for chave, c in config.COMPETICOES.items()]
+    videos = []
+    if config.PASTA_VIDEOS.is_dir():
+        for v in listar_videos(falar=False):
+            videos.append({
+                "arquivo": v.name,
+                "nome": v.stem,
+                "duracao": formatar_duracao(duracao_segundos(v)).strip(),
+                "tamanho_gb": round(v.stat().st_size / 1024**3, 1),
+                "gravado_em": f"{datetime.fromtimestamp(v.stat().st_mtime):%d/%m %H:%M}",
+            })
+    print(json.dumps({
+        "pasta": str(config.PASTA_VIDEOS),
+        "pasta_existe": config.PASTA_VIDEOS.is_dir(),
+        "competicoes": competicoes,
+        "videos": videos,
+        "intervalo_padrao": config.MINUTOS_ENTRE_JOGOS,
+        "margem_minutos": config.MINUTOS_MARGEM_MINIMA,
+        "edicao": config.EDICAO,
+        "temporada": config.TEMPORADA,
+        "login_feito": config.PERFIL_CHROME.is_dir(),
+    }, ensure_ascii=False))
+    return 0
+
+
+def ler_plano(caminho: str, videos: list[Path]) -> tuple:
+    """--plano: as respostas que o terminal perguntaria, num .json.
+
+    {"competicao": "serieA", "rodada": "5", "modo": "estreia",
+     "inicio": "2026-10-23 18:00", "intervalo": 20,
+     "horarios": [["A vs B.mp4", "C vs D.mp4"], ["E vs F.mp4"]]}
+
+    Os videos vao pelo NOME, e nao pelo numero da lista: entre o painel
+    montar a tela e o envio, um video novo na pasta mudaria a numeracao.
+    Devolve (competicao, rodada, horarios, inicio, intervalo); ValueError
+    com a mensagem para mostrar se algo nao conferir.
+    """
+    with open(caminho, encoding="utf-8") as f:
+        dados = json.load(f)
+
+    competicao = dados.get("competicao")
+    if competicao not in config.COMPETICOES:
+        raise ValueError(f"competicao desconhecida: {competicao}")
+    rodada = normalizar_rodada(dados.get("rodada", ""))
+    if rodada not in config.COMPETICOES[competicao]["rodadas"]:
+        raise ValueError(f"rodada invalida para {config.COMPETICOES[competicao]['nome']}: "
+                         f"{dados.get('rodada')}")
+
+    por_nome = {v.name: v for v in videos}
+    horarios, vistos = [], set()
+    for grupo in dados.get("horarios") or []:
+        if not grupo:
+            continue
+        for nome in grupo:
+            if nome not in por_nome:
+                raise ValueError(f"o video '{nome}' nao esta mais na pasta (ou ja subiu)")
+            if nome in vistos:
+                raise ValueError(f"o video '{nome}' aparece duas vezes")
+            vistos.add(nome)
+        horarios.append([por_nome[n] for n in grupo])
+    if not horarios:
+        raise ValueError("nenhum video escolhido")
+
+    if dados.get("modo") == "privado":
+        return competicao, rodada, horarios, None, None
+    if dados.get("modo") != "estreia":
+        raise ValueError(f"modo deve ser 'estreia' ou 'privado', veio {dados.get('modo')!r}")
+    try:
+        inicio = datetime.strptime(str(dados.get("inicio")), "%Y-%m-%d %H:%M")
+    except ValueError:
+        raise ValueError(f"data/horario invalido: {dados.get('inicio')!r}")
+    intervalo = int(dados.get("intervalo") or config.MINUTOS_ENTRE_JOGOS)
+    if not 1 <= intervalo <= 24 * 60:
+        raise ValueError(f"intervalo invalido: {intervalo} minutos")
+    return competicao, rodada, horarios, inicio, intervalo
+
+
+# ==========================================================================
 # PRINCIPAL
 # ==========================================================================
 
@@ -420,7 +522,15 @@ def main() -> int:
     parser.add_argument("--simular", action="store_true", help="so mostra o plano")
     parser.add_argument("--pausar", action="store_true", help="para antes de cada Programar")
     parser.add_argument("--limite", type=int, default=0, help="sobe so os N primeiros videos")
+    parser.add_argument("--listar", action="store_true",
+                        help="so lista competicoes e videos em JSON (para o painel)")
+    parser.add_argument("--plano", metavar="ARQUIVO.json",
+                        help="respostas num .json em vez de perguntar (para o painel); "
+                             "ja vale como confirmado")
     args = parser.parse_args()
+
+    if args.listar:
+        return listar_em_json()
 
     if not config.PASTA_VIDEOS.is_dir():
         print(f"ERRO: nao achei a pasta {config.PASTA_VIDEOS}")
@@ -433,16 +543,23 @@ def main() -> int:
         return 0
     print(f"{len(videos)} video(s) encontrado(s).\n")
 
-    competicao = perguntar_competicao()
-    rodada = perguntar_rodada(competicao)
-    horarios = perguntar_ordem(videos)
-    # No modo privado nao ha o que agendar, entao nem pergunta data e horario.
-    if perguntar_modo() == "estreia":
-        inicio = perguntar_inicio()
-        # Com um horario so (todos juntos), nao ha intervalo a perguntar.
-        intervalo = perguntar_intervalo() if len(horarios) > 1 else None
+    if args.plano:
+        try:
+            competicao, rodada, horarios, inicio, intervalo = ler_plano(args.plano, videos)
+        except (OSError, ValueError) as erro:
+            print(f"ERRO no plano: {erro}")
+            return 1
     else:
-        inicio, intervalo = None, None
+        competicao = perguntar_competicao()
+        rodada = perguntar_rodada(competicao)
+        horarios = perguntar_ordem(videos)
+        # No modo privado nao ha o que agendar, entao nem pergunta data e horario.
+        if perguntar_modo() == "estreia":
+            inicio = perguntar_inicio()
+            # Com um horario so (todos juntos), nao ha intervalo a perguntar.
+            intervalo = perguntar_intervalo() if len(horarios) > 1 else None
+        else:
+            inicio, intervalo = None, None
 
     playlist = config.nome_playlist(competicao)
     plano = montar_plano(horarios, competicao, rodada, inicio, intervalo)
@@ -459,7 +576,8 @@ def main() -> int:
         return 0
     descricao = ler_descricao(competicao)
     miniatura = achar_miniatura(competicao)
-    if not confirmar("Confere? Posso subir"):
+    # Pelo painel, a confirmacao ja foi feita na tela (aqui nao ha teclado).
+    if not args.plano and not confirmar("Confere? Posso subir"):
         print("Cancelado.")
         return 0
 

@@ -2,8 +2,9 @@
 painel.py  --  Auto_PES21
 
 O painel no navegador, para usar o projeto sem abrir codigo: monta a fila de
-jogos pelas rodadas do site, ajusta o caminhos.ini e roda os tres passos
-(rodar_jogos, extrair_eventos, enviar_resultados) mostrando a saida na tela.
+jogos pelas rodadas do site, ajusta o caminhos.ini e roda os quatro passos
+(rodar_jogos, extrair_eventos, enviar_resultados e youtube/upar_videos)
+mostrando a saida na tela.
 
 NAO substitui os scripts: so chama eles, do mesmo jeito que o terminal. Tudo
 continua funcionando sem o painel.
@@ -29,6 +30,7 @@ SEGUNDOS_TIMEOUT_SITE = 90
 
 ARQUIVO_FILA = "fila_jogos.json"            # a fila montada no painel
 ARQUIVO_CONTROLE = "resultados_enviados.json"   # do enviar_resultados.py
+ARQUIVO_PLANO_YOUTUBE = "plano_youtube.json"    # o que a aba YouTube manda subir
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
 
 # ==========================================================================
@@ -36,6 +38,7 @@ EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
 import codecs
 import configparser
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -66,6 +69,9 @@ CAMPOS_INI = [
     ("site", "url"),
     ("site", "token"),
     ("site", "base_jogadores"),
+    ("youtube", "chrome"),
+    ("youtube", "edicao"),
+    ("youtube", "temporada"),
 ]
 
 TIPOS = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -168,6 +174,19 @@ def conferir_config(ini) -> dict:
         achou = expandir(base).is_file()
         conf_base = {"ok": achou, "texto": "arquivo encontrado" if achou else "arquivo nao encontrado"}
 
+    chrome = valor_ini(ini, "youtube", "chrome")
+    if chrome:
+        achou = expandir(chrome).is_file()
+        conf_chrome = {"ok": achou, "texto": "achei o Chrome" if achou else "nao achei esse arquivo"}
+    else:
+        conf_chrome = {"ok": None, "texto": "vazio: o script procura o Chrome sozinho"}
+
+    def numero(chave):
+        valor = valor_ini(ini, "youtube", chave)
+        if valor.isdigit():
+            return {"ok": True, "texto": "vai no nome das playlists"}
+        return {"ok": False, "texto": "preencha com um numero: sem ele o YouTube nao sobe"}
+
     return {
         "pasta_pes": arquivo(pes, "PES2021.exe"),
         "pasta_sider": arquivo(sider, "sider.exe"),
@@ -177,6 +196,9 @@ def conferir_config(ini) -> dict:
         "token": {"ok": bool(valor_ini(ini, "site", "token")) or None,
                   "texto": "guardado" if valor_ini(ini, "site", "token") else "vazio: so da para simular o envio"},
         "base_jogadores": conf_base,
+        "chrome": conf_chrome,
+        "edicao": numero("edicao"),
+        "temporada": numero("temporada"),
     }
 
 
@@ -346,6 +368,8 @@ TAREFAS = {
     "rodar":   {"titulo": "Rodar jogos", "script": "rodar_jogos.py"},
     "extrair": {"titulo": "Extrair eventos", "script": "extrair_eventos.py"},
     "enviar":  {"titulo": "Enviar resultados", "script": "enviar_resultados.py"},
+    "youtube": {"titulo": "Subir no YouTube", "script": "youtube/upar_videos.py"},
+    "youtube_login": {"titulo": "Entrar na conta do canal", "script": "youtube/login.py"},
 }
 
 
@@ -467,7 +491,38 @@ def iniciar_tarefa(pedido: dict) -> None:
         argumentos = ["--auto", "--fila", ARQUIVO_FILA]
     elif nome == "enviar" and pedido.get("simular"):
         argumentos = ["--simular"]
+    elif nome == "youtube":
+        # As respostas que o upar_videos.py perguntaria no terminal; ele
+        # confere tudo de novo (video ainda na pasta, rodada, horario).
+        plano = pedido.get("plano")
+        if not isinstance(plano, dict):
+            raise ValueError("Faltou o plano do YouTube.")
+        caminho = PASTA_PROJETO / ARQUIVO_PLANO_YOUTUBE
+        caminho.write_text(json.dumps(plano, ensure_ascii=False, indent=2), encoding="utf-8")
+        argumentos = ["--plano", ARQUIVO_PLANO_YOUTUBE]
+        if pedido.get("simular"):
+            argumentos.append("--simular")
     tarefa.iniciar(nome, argumentos)
+
+
+def situacao_do_youtube() -> dict:
+    """O que a aba YouTube precisa: competicoes e videos, pelo --listar do
+    proprio upar_videos.py (assim a regra de quais videos podem subir fica
+    num lugar so)."""
+    resultado = subprocess.run(
+        [sys.executable, "youtube/upar_videos.py", "--listar"],
+        cwd=PASTA_PROJETO, capture_output=True, timeout=60,
+        env=dict(os.environ, PYTHONIOENCODING="utf-8"),
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    saida = resultado.stdout.decode("utf-8", errors="replace").strip()
+    if resultado.returncode != 0:
+        # O config.py para com sys.exit("ERRO: ...") quando falta algo no
+        # caminhos.ini: essa mensagem e o que interessa mostrar.
+        erro = resultado.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(saida or erro or "upar_videos.py --listar falhou")
+    dados = json.loads(saida)
+    dados["playwright"] = importlib.util.find_spec("playwright") is not None
+    return dados
 
 
 def caminho_da_foto(pedido: str):
@@ -527,6 +582,8 @@ class Pedido(BaseHTTPRequestHandler):
         try:
             if rota == "/api/config":
                 return self._json(config_para_pagina())
+            if rota == "/api/youtube":
+                return self._json(situacao_do_youtube())
             if rota == "/api/times":
                 return self._json(times.TIMES)
             if rota == "/api/competicoes":
@@ -547,6 +604,8 @@ class Pedido(BaseHTTPRequestHandler):
                 return self._responder(200, caminho.read_bytes(), "image/png")
         except ErroDoSite as erro:
             return self._erro(str(erro), 502)
+        except (ValueError, subprocess.TimeoutExpired) as erro:
+            return self._erro(str(erro), 500)
 
         # Arquivos da pagina.
         nome = "index.html" if rota == "/" else rota.lstrip("/")

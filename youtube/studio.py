@@ -1,5 +1,5 @@
 """
-studio.py  --  RPA_Youtube
+studio.py  --  Auto_PES21 / youtube
 
 Tudo que clica no YouTube Studio fica aqui.
 

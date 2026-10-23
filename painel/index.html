@@ -16,6 +16,7 @@
   <nav class="abas" role="tablist">
     <button role="tab" data-aba="jogos" class="ativa">Jogos</button>
     <button role="tab" data-aba="videos">Vídeos</button>
+    <button role="tab" data-aba="youtube">YouTube</button>
     <button role="tab" data-aba="config">Configuração</button>
   </nav>
   <div id="pilula" class="pilula ociosa">Parado</div>
@@ -94,6 +95,56 @@
     </div>
   </section>
 
+  <!-- ============================== YOUTUBE ============================== -->
+  <section class="painel-aba escondido" id="aba-youtube">
+    <div id="yt-alertas" class="alertas"></div>
+
+    <div class="cartao">
+      <div class="cartao-topo">
+        <h2>Vídeos para subir <span id="yt-contagem" class="contador">0</span></h2>
+        <div class="grupo-botoes">
+          <button class="fantasma" id="yt-login" title="Abre o Chrome do robô para entrar na conta do canal">Entrar na conta do canal</button>
+          <button class="fantasma" id="yt-recarregar">Atualizar</button>
+        </div>
+      </div>
+      <div class="linha-campos">
+        <label>Competição <select id="yt-competicao"></select></label>
+        <label>Rodada <select id="yt-rodada"></select></label>
+      </div>
+      <p class="nota" id="yt-playlist"></p>
+      <p class="nota">Os vídeos soltos na pasta que ainda não subiram, em ordem de gravação.
+        Desmarque os que ficam de fora; <b>junto</b> estreia no mesmo horário do jogo de cima.</p>
+      <ol id="yt-videos" class="lista-fila"></ol>
+    </div>
+
+    <div class="cartao">
+      <h2>Como subir</h2>
+      <div class="opcoes-modo" role="radiogroup">
+        <label><input type="radio" name="yt-modo" value="estreia" checked> Estreia <small>programada, com contagem regressiva</small></label>
+        <label><input type="radio" name="yt-modo" value="privado"> Privado <small>só sobe, sem data</small></label>
+      </div>
+      <div class="linha-campos" id="yt-campos-estreia">
+        <label>Data da primeira estreia <input type="date" id="yt-data"></label>
+        <label>Horário <input type="time" id="yt-hora" step="300"></label>
+        <label>Minutos entre as estreias <input type="number" id="yt-intervalo" min="1" max="1440"></label>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <h2>Plano</h2>
+      <ul id="yt-plano" class="lista-plano"></ul>
+      <ul id="yt-problemas" class="lista-problemas"></ul>
+      <div class="acoes-linha">
+        <span class="espaco"></span>
+        <button class="secundario" id="yt-simular">Conferir (simular)</button>
+        <button class="primario" id="yt-subir" disabled>Subir</button>
+      </div>
+      <p class="nota">Cada vídeo programado vai para a subpasta <code>Enviados</code> e para o
+        <code>youtube/historico.csv</code>, para nunca subir duas vezes. Se parar no meio, o vídeo que falhou
+        pode ter ficado como <b>rascunho</b> no YouTube Studio: apague lá antes de tentar de novo.</p>
+    </div>
+  </section>
+
   <!-- ============================== CONFIG ============================== -->
   <section class="painel-aba escondido" id="aba-config">
     <form class="cartao" id="form-config" autocomplete="off">
@@ -131,6 +182,23 @@
       <div class="campo" data-campo="base_jogadores">
         <label for="base_jogadores">Base de jogadores <small>pes-jogadores.json.gz, do repositório do site (opcional)</small></label>
         <input id="base_jogadores" name="base_jogadores" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+
+      <h2 class="separado">YouTube</h2>
+      <div class="campo" data-campo="edicao">
+        <label for="edicao">Edição <small>vai no nome das playlists (“8ª Edição”)</small></label>
+        <input id="edicao" name="edicao" inputmode="numeric" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+      <div class="campo" data-campo="temporada">
+        <label for="temporada">Temporada <small>vai no nome das playlists (“3ª Temporada”)</small></label>
+        <input id="temporada" name="temporada" inputmode="numeric" spellcheck="false">
+        <span class="conferencia"></span>
+      </div>
+      <div class="campo" data-campo="chrome">
+        <label for="chrome">Chrome <small>chrome.exe; vazio = procura sozinho</small></label>
+        <input id="chrome" name="chrome" spellcheck="false">
         <span class="conferencia"></span>
       </div>
 

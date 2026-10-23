@@ -2,18 +2,22 @@
 
 Roda partidas **CPU x CPU** no PES 2021 sozinho, uma atrás da outra, e grava
 cada uma com a NVIDIA (Alt+F9). Depois lê o final de cada vídeo (placar, gols,
-cartões, notas) e envia os resultados para o site da liga.
+cartões, notas), envia os resultados para o site da liga e sobe os vídeos no
+YouTube como estreia.
 
 O fluxo completo:
 
 ```
-rodar_jogos.py  ->  extrair_eventos.py  ->  enviar_resultados.py  ->  (RPA_Youtube)
+rodar_jogos.py  ->  extrair_eventos.py  ->  enviar_resultados.py  ->  youtube/upar_videos.py
  joga e grava        lê o fim do vídeo       manda para o site         sobe no YouTube
 ```
 
 Quem não quer mexer em código pode fazer tudo pelo **painel no navegador**
 (seção 2.0): montar a fila pelas rodadas do site, ajustar os caminhos e
-rodar os três passos com um clique.
+rodar os quatro passos com um clique.
+
+> **Vindo do RPA_Youtube?** Ele agora mora na pasta `youtube/` deste projeto
+> (o repositório separado não é mais atualizado). Veja a seção 2.5.
 
 ---
 
@@ -28,6 +32,7 @@ rodar os três passos com um clique.
   *Code → Download ZIP* e descompactar.
 - **PES 2021** com o patch e o **sider**.
 - **NVIDIA GeForce Experience / App** com a gravação no atalho **Alt+F9**.
+- **Google Chrome**, só para subir no YouTube.
 
 ### 1.2 Baixar e instalar as dependências
 
@@ -35,7 +40,11 @@ rodar os três passos com um clique.
 git clone https://github.com/marcola20/Auto_PES21.git
 cd Auto_PES21
 pip install pillow pydirectinput imageio-ffmpeg winrt-runtime winrt-Windows.Media.Ocr winrt-Windows.Graphics.Imaging winrt-Windows.Storage.Streams winrt-Windows.Globalization winrt-Windows.Foundation winrt-Windows.Foundation.Collections
+pip install playwright
 ```
+
+O `playwright` é só para subir no YouTube. Não precisa de `playwright install`:
+ele usa o Chrome que já está no PC.
 
 ### 1.3 Dizer onde ficam as pastas no seu PC
 
@@ -53,7 +62,17 @@ pasta_sider = D:\Jogos\eFootball PES 2021\PES 2009 Remake
 
 # Onde a NVIDIA salva as gravacoes do PES
 pasta_videos = ~\Videos\NVIDIA\eFootball PES 2021
+
+[youtube]
+# chrome.exe. Deixe em branco para o script achar sozinho.
+chrome =
+# Vao no nome das playlists. Troque na virada de temporada.
+edicao = 8
+temporada = 3
 ```
+
+O mesmo arquivo tem a seção `[site]` (seção 2.4). Tudo isso dá para editar
+também pelo painel, na aba **Configuração**.
 
 - Pode usar `\` normalmente, sem aspas.
 - `~` é a sua pasta de usuário (`C:\Users\<seu nome>`).
@@ -124,8 +143,12 @@ terminal aberta enquanto usa; Ctrl+C nela fecha o painel.
   das seções 2.3 e 2.4, com a saída aparecendo no painel.
 - **Vídeos:** cada jogo da pasta e em que passo está (falta extrair,
   revisar, pronto para enviar, enviado).
+- **YouTube:** competição, rodada, quais vídeos e em que ordem (*junto* =
+  mesmo horário do de cima), estreia ou privado, data e intervalo. Mostra o
+  título e o horário de cada vídeo antes de subir. O botão *Entrar na conta
+  do canal* abre o Chrome do robô para o login (seção 2.5).
 - **Configuração:** edita o `caminhos.ini` e confere se o PES2021.exe, o
-  sider.exe e a pasta de vídeos estão onde você disse.
+  sider.exe, a pasta de vídeos e o Chrome estão onde você disse.
 
 O painel só chama os scripts: tudo abaixo continua funcionando pelo terminal.
 
@@ -229,7 +252,30 @@ python enviar_resultados.py             # envia
 `.json` com `"status": "revisar"` é pulado. O que já foi enviado fica anotado e
 não é mandado de novo (a não ser que o `.json` mude).
 
-### 2.5 Outros utilitários
+### 2.5 Subir no YouTube
+
+Pelo painel (aba **YouTube**) ou pelo terminal, de dentro da pasta `youtube`:
+
+```
+cd youtube
+python login.py          # uma vez: entrar na conta do canal
+python upar_videos.py    # pergunta competição, rodada, ordem e horário
+```
+
+Detalhes (playlists, descrições, capas, opções): [youtube/README.md](youtube/README.md).
+
+**Vindo do RPA_Youtube?** Copie da pasta antiga para `Auto_PES21\youtube\`:
+
+- `historico.csv` — **importante**: é ele que impede subir o mesmo vídeo
+  duas vezes;
+- a pasta `perfil_chrome` — o login do canal (sem ela, é só rodar o
+  `login.py` de novo).
+
+O `caminhos.ini` antigo não serve mais: o `chrome` vai para a seção
+`[youtube]` do `caminhos.ini` daqui, junto com `edicao` e `temporada`
+(antes ficavam no `config.py`).
+
+### 2.6 Outros utilitários
 
 | Comando | Para que serve |
 |---|---|

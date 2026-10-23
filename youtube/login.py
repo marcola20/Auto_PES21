@@ -1,5 +1,5 @@
 """
-login.py  --  RPA_Youtube
+login.py  --  Auto_PES21 / youtube
 
 Rode UMA vez (e de novo so se o YouTube deslogar):
   python login.py

@@ -1,10 +1,12 @@
-# RPA_Youtube
+# youtube — subir os jogos no YouTube
 
-Sobe para o YouTube os jogos gravados pelo
-[Auto_PES21](https://github.com/marcola20/Auto_PES21), cada um programado como
+Parte do [Auto_PES21](../README.md) (antes era o repositório separado
+RPA_Youtube). Sobe para o YouTube os jogos gravados, cada um programado como
 **estreia** (de 20 em 20 minutos, ou o intervalo que você escolher) ou como
-**privado**, com título, descrição, miniatura e playlist
-da competição.
+**privado**, com título, descrição, miniatura e playlist da competição.
+
+O jeito fácil é o painel (`python painel.py`, na pasta de cima), aba
+**YouTube**. Este arquivo explica o que fica por trás e o uso pelo terminal.
 
 ---
 
@@ -12,47 +14,34 @@ da competição.
 
 ### 1.1 O que precisa ter no PC
 
-- **Python 3.10 ou mais novo** — na instalação, marque *"Add Python to PATH"*.
-- **Git** (para o `git clone` abaixo). Sem Git, dá para baixar pelo GitHub em
-  *Code → Download ZIP* e descompactar.
+Além do que o Auto_PES21 já pede:
+
 - **Google Chrome** instalado.
 - O **YouTube Studio em português** (o script procura os botões pelo texto).
+- O `playwright`: `pip install playwright`. Não precisa de
+  `playwright install`: o script usa o Chrome que já está no PC.
 
-### 1.2 Baixar e instalar
+### 1.2 Caminhos, edição e temporada
 
-```
-git clone https://github.com/marcola20/RPA_Youtube.git
-cd RPA_Youtube
-pip install playwright
-```
-
-Não precisa de `playwright install`: o script usa o Chrome que já está no PC.
-
-### 1.3 Dizer onde ficam as pastas no seu PC
-
-Rode:
-
-```
-python login.py
-```
-
-Na primeira vez ele cria o arquivo **`caminhos.ini`** e para. Abra no Bloco de
-Notas e ajuste:
+Ficam no **`caminhos.ini` do Auto_PES21** (a pasta de cima), o mesmo da
+gravação — a `pasta_videos` é a mesma. Pelo painel, aba **Configuração**; ou
+no Bloco de Notas:
 
 ```ini
-[caminhos]
-# Onde a NVIDIA salva as gravacoes do PES (a mesma pasta_videos do Auto_PES21)
-pasta_videos = ~\Videos\NVIDIA\eFootball PES 2021
-
+[youtube]
 # chrome.exe. Deixe em branco para o script achar sozinho.
 chrome =
+# Vao no nome das playlists. Troque na virada de temporada.
+edicao = 8
+temporada = 3
 ```
 
-- Pode usar `\` normalmente, sem aspas.
-- `~` é a sua pasta de usuário (`C:\Users\<seu nome>`).
-- Esse arquivo é só seu: ele **não** vai para o GitHub.
+Sem `edicao` ou `temporada` o script para: um número velho iria para o nome da
+playlist de todos os vídeos.
 
-### 1.4 Entrar na conta do canal
+### 1.3 Entrar na conta do canal
+
+Pelo painel, botão **Entrar na conta do canal**; ou, de dentro desta pasta:
 
 ```
 python login.py
@@ -64,19 +53,23 @@ na pasta `perfil_chrome/`, que é só sua e **nunca** vai para o GitHub.
 
 Só precisa repetir se o YouTube deslogar.
 
-### 1.5 Ajustar a temporada, playlists, descrições e capas
+**Vindo do RPA_Youtube?** Copie da pasta antiga para esta (`youtube/`) o
+`historico.csv` (**importante**: é ele que impede subir o mesmo vídeo duas
+vezes) e a pasta `perfil_chrome` (o login; sem ela, é só fazer o login de
+novo).
+
+### 1.4 Playlists, descrições e capas
 
 Em `config.py`:
 
 | O quê | Onde |
 |---|---|
-| Edição e temporada | `EDICAO` e `TEMPORADA` |
 | Nome das playlists | `COMPETICOES` → `playlist` (tem que ser o nome **exato** da playlist no canal, e ela já tem que existir) |
 | Rodadas aceitas | `COMPETICOES` → `rodadas` |
 | Intervalo padrão entre estreias (o script pergunta na hora; Enter usa este) | `MINUTOS_ENTRE_JOGOS` |
 
 Descrições e miniaturas de cada competição são os arquivos
-`descricao_*.txt` e `capa_*.jpg` na pasta do projeto — é só trocar.
+`descricao_*.txt` e `capa_*.jpg` desta pasta — é só trocar.
 
 ---
 
@@ -127,6 +120,8 @@ Cada vídeo programado vai para a subpasta **`Enviados`** e é anotado em
 | `python upar_videos.py --simular` | só mostra o plano, não abre o navegador |
 | `python upar_videos.py --pausar` | para antes de cada "Programar" para você conferir |
 | `python upar_videos.py --limite 1` | sobe só o primeiro (bom para testar) |
+| `python upar_videos.py --listar` | competições e vídeos em JSON (o painel usa) |
+| `python upar_videos.py --plano plano.json` | respostas num `.json` em vez de perguntar (o painel usa) |
 
 **Primeira vez? Use `--simular` e depois `--limite 1 --pausar`.**
 

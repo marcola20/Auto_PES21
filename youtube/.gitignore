@@ -5,9 +5,6 @@ __pycache__/
 # ir para o GitHub: quem baixasse entraria no canal. Cada um roda login.py.
 perfil_chrome/
 
-# Caminhos deste PC. O modelo que vai para o GitHub e caminhos.exemplo.ini.
-caminhos.ini
-
 # Estado e diagnostico desta maquina, nao codigo.
 historico.csv
 diagnostico/
