@@ -152,6 +152,8 @@ NOTAS_X_ESTRELA = {"casa": (334, 362), "fora": (708, 740)}
 # Quem entrou no fim fica com "-" no lugar da nota. O OCR nao le o traco, mas
 # ele e baixo: recortado justo da 6 px de altura, um algarismo da 17.
 ALTURA_MAXIMA_TRACO = 9
+# Distancia (y) entre uma linha da lista de notas e a seguinte.
+ESPACO_LINHAS_NOTAS = 26
 
 # Aba de eventos: area visivel da lista (abaixo do titulo da aba) e onde fica
 # o icone de cada lado, em relacao a CENTRO_X.
@@ -820,6 +822,7 @@ def ler_notas(ocr, telas, avisos: Avisos):
             x_ini = NOTAS_X_INICIO_NOME[lado]
             candidatas = [ln for linhas in tela.linhas for ln in linhas
                           if x_ini[0] <= ln.x0 <= x_ini[1] and ln.cy > FAIXA_Y_TITULO_ABA[1]]
+            lidas = []
             for grupo in agrupar([ln.cy for ln in candidatas], 8):
                 y = statistics.median(grupo)
                 nomes = [ln.texto for ln in candidatas if abs(ln.cy - y) <= 8]
@@ -836,6 +839,17 @@ def ler_notas(ocr, telas, avisos: Avisos):
                     tracos += nota_justa is not None and nota_justa.height <= ALTURA_MAXIMA_TRACO
                     ciano = contar_pixels(painel, (xe[0], y - 10, xe[1], y + 10), eh_ciano)
                     estrelas += len(ciano) >= PIXELS_MINIMOS_ESTRELA
+                lidas.append((y, nomes, numeros, notas, estrelas, tracos))
+            # Placa do estadio vista entre duas linhas ("Itau" a 10 px do
+            # Fredy Guarin, Inter x Parana) vira uma linha sem numero e
+            # saia como jogador. Linha de verdade nunca fica a menos de meia
+            # linha de outra; texto sem numero colado numa linha com numero
+            # e o fundo.
+            com_numero = [y for y, _, numeros, *_ in lidas if any(n is not None for n in numeros)]
+            for y, nomes, numeros, notas, estrelas, tracos in lidas:
+                if all(n is None for n in numeros) and any(
+                        abs(y - yn) < ESPACO_LINHAS_NOTAS / 2 for yn in com_numero):
+                    continue
                 nome, _ = votar_nome(nomes)
                 if nome is None:
                     # Nome curto sozinho ("Pepe") o OCR do painel inteiro nao
@@ -1048,7 +1062,7 @@ def ler_eventos(ocr, telas, avisos: Avisos):
     y_min, y_max = EVENTOS_Y_VISIVEL
     observacoes = defaultdict(list)    # (minuto, n, lado, dy) -> [(nome, icone)]
     sem_minuto = set()                 # nomes vistos ao lado de bolha ilegivel
-    sem_ordem = defaultdict(set)       # nome visto so em bolha de ordem incerta -> {(minuto, lado)}
+    sem_ordem = defaultdict(set)       # nome visto so em bolha de ordem incerta -> {(minuto, lado, dy)}
     bolhas_vistas = set()              # (minuto, (periodo, qual bolha desse minuto))
 
     for tela in telas:
@@ -1132,7 +1146,7 @@ def ler_eventos(ocr, telas, avisos: Avisos):
                     sem_minuto.add(chave)
                     continue
                 if repeticoes[i] is None:
-                    sem_ordem[chave].add((minuto, lado))
+                    sem_ordem[chave].add((minuto, lado, cy - y_bolha))
                     continue
                 observacoes[(minuto, repeticoes[i], lado, cy - y_bolha)].append((ln.texto, icone))
 
@@ -1186,11 +1200,17 @@ def ler_eventos(ocr, telas, avisos: Avisos):
     # ele: "klep9r" = Kleber aos 80' (Sport x Vasco), e "jesusnavasbanrisul..."
     # = Jesus Navas com o letreiro do estadio grudado (Inter x Vitoria). So
     # no mesmo minuto e lado da para afrouxar assim sem esconder evento.
-    def lido_ali(chave, minuto, lado):
+    # Na mesma ALTURA em relacao a bolha, nem o nome precisa parecer: e a
+    # mesma linha, lida torta. "ue4e-y2snar" = Wesley Sneijder aos 45+2'
+    # (Vitoria x Palmeiras), com o telao "2-2" do estadio atras, lido uma
+    # vez so.
+    def lido_ali(chave, minuto, lado, dy):
         chave = sem_trocas(chave)
-        for _, i in itens:
+        for (_, _, _, dy_lido), i in itens:
             if i["minuto"] != minuto or i["lado"] != lado or not i["jogador"]:
                 continue
+            if abs(dy - dy_lido) <= 6:
+                return True
             nome = sem_trocas(chave_nome(i["jogador"]))
             contido = (len(nome) >= 4 and nome in chave) or (len(chave) >= 4 and chave in nome)
             if contido or SequenceMatcher(None, chave, nome).ratio() >= 0.6:
@@ -1198,7 +1218,7 @@ def ler_eventos(ocr, telas, avisos: Avisos):
         return False
 
     for chave in filter(perdido, set(sem_ordem) - sem_minuto):
-        if all(lido_ali(chave, minuto, lado) for minuto, lado in sem_ordem[chave]):
+        if all(lido_ali(chave, *visto) for visto in sem_ordem[chave]):
             continue
         avisos.add(f"evento sempre no topo da lista, sem saber qual bolha (jogador ~{chave})")
 
