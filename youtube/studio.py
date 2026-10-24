@@ -46,6 +46,7 @@ SELETORES = {
     "playlist_pesquisa": "ytcp-playlist-dialog ytcp-search-bar input",
     "playlist_linha": "ytcp-playlist-dialog li.row",
     "playlist_concluir": "ytcp-playlist-dialog ytcp-button.done-button",
+    "playlist_vazia": "ytcp-playlist-dialog >> text=/Nenhuma playlist/i",
     "nao_infantil": 'tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]',
     "proximo": "#next-button",
     "privacidade_expandir": "#first-container-expand-button",
@@ -103,6 +104,24 @@ JS_CONFERIR_MINIATURA = """
   if (!area) return null;
   const imgs = [...area.querySelectorAll('img')].filter(i => i.src && i.clientWidth > 40);
   return {texto: (area.innerText || '').trim(), imagens: imgs.length};
+})()
+"""
+
+# O link do video (https://youtu.be/<id>) que a janela de upload mostra na
+# lateral assim que aceita o arquivo. So dentro da janela: atras dela, a
+# lista do Studio tem links de outros videos.
+JS_LINK_DO_VIDEO = r"""
+(() => {
+  const link = /^https:\/\/(youtu\.be\/|(www\.)?youtube\.com\/watch\?v=)[A-Za-z0-9_-]{11}/;
+  const busca = (raiz) => {
+    for (const a of raiz.querySelectorAll('a[href]')) if (link.test(a.href)) return a.href;
+    for (const n of raiz.querySelectorAll('*')) {
+      if (n.shadowRoot) { const r = busca(n.shadowRoot); if (r) return r; }
+    }
+    return null;
+  };
+  const janela = document.querySelector('ytcp-uploads-dialog');
+  return janela ? busca(janela) : null;
 })()
 """
 
@@ -269,8 +288,11 @@ class Studio:
 
     def enviar(self, video: Path, titulo: str, descricao: str, playlist: str | None,
                estreia: datetime | None, miniatura: Path | None = None,
-               pausar: bool = False) -> None:
-        """estreia=None sobe o video como PRIVADO, sem agendar nada."""
+               pausar: bool = False) -> str | None:
+        """estreia=None sobe o video como PRIVADO, sem agendar nada.
+
+        Devolve o link do video, ou None se a janela nao mostrou (nao para o
+        envio: o link pode ser colado depois no painel)."""
         p = self.pagina
 
         self._passo("abrir tela de upload")
@@ -294,10 +316,24 @@ class Studio:
         if estreia is not None and estreia < datetime.now() + timedelta(minutes=config.MINUTOS_MARGEM_MINIMA):
             raise self._erro(f"a estreia ({estreia:%H:%M}) ficou perto demais do horario atual")
 
+        link = self.ler_link()
+
         if pausar:
             input("      >> Confira a tela. Enter para clicar em PROGRAMAR (Ctrl+C cancela)... ")
 
         self.programar(privado=estreia is None)
+        return link
+
+    def ler_link(self) -> str | None:
+        self._passo("ler o link do video")
+        limite = time.time() + 30
+        while time.time() < limite:
+            link = self.pagina.evaluate(JS_LINK_DO_VIDEO)
+            if link:
+                return link
+            self.pagina.wait_for_timeout(1000)
+        print("      AVISO: a janela de upload nao mostrou o link do video; cole ele depois no painel.")
+        return None
 
     def _selecionar_arquivo(self, arquivo: Path, js_campo: str = JS_INPUT_VIDEO) -> None:
         """Entrega o arquivo ao campo direto pelo Chrome (protocolo CDP).
@@ -388,10 +424,28 @@ class Studio:
     def _playlist(self, playlist: str) -> None:
         p = self.pagina
         self._passo("playlist")
-        self._visivel(SELETORES["playlist_abrir"]).click()
-        dialogo = self._visivel(SELETORES["playlist_dialogo"])
+        # As vezes a janela abre com "Nenhuma playlist disponivel" mesmo com o
+        # canal cheio delas: a lista nao carregou. Fecha e abre de novo.
+        for tentativa in range(3):
+            self._visivel(SELETORES["playlist_abrir"]).click()
+            dialogo = self._visivel(SELETORES["playlist_dialogo"])
+            pesquisa = p.locator(SELETORES["playlist_pesquisa"]).first
+            vazia = p.locator(SELETORES["playlist_vazia"]).first
+            limite = time.time() + MS_CURTO / 1000
+            while time.time() < limite and not pesquisa.is_visible() and not vazia.is_visible():
+                p.wait_for_timeout(500)
+            if pesquisa.is_visible():
+                break
+            print("        a janela de playlists veio vazia; abrindo de novo")
+            self._visivel(SELETORES["playlist_concluir"]).click()
+            dialogo.wait_for(state="hidden", timeout=MS_CURTO)
+            p.wait_for_timeout(5000 * (tentativa + 1))
+        else:
+            raise self._erro('a janela de playlists veio vazia ("Nenhuma playlist disponivel") 3 vezes. '
+                             f'Confira no Studio se a playlist "{playlist}" existe e se a conta nao pede '
+                             "para confirmar a identidade.")
         # A lista so desenha as playlists que cabem na tela: pesquisa antes.
-        self._visivel(SELETORES["playlist_pesquisa"]).fill(playlist)
+        pesquisa.fill(playlist)
         p.wait_for_timeout(1500)
         linha = p.locator(SELETORES["playlist_linha"]).filter(
             has=p.get_by_text(playlist, exact=True))

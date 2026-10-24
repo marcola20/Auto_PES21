@@ -18,6 +18,9 @@ resultados_enviados.json
 # Ultima copia dos elencos do site (extrair_eventos.py), para rodar sem internet.
 elencos_site.json
 resultados_enviados.tmp
+# Controle do atribuir_videos.py: links de video ja gravados no site.
+videos_atribuidos.json
+videos_atribuidos.tmp
 
 # Caminhos deste PC (pasta do PES, dos videos). Cada um tem o seu; o modelo
 # que vai para o GitHub e caminhos.exemplo.ini.

@@ -406,6 +406,7 @@ async function carregarYoutube() {
   if (!intervalo.value) intervalo.value = dados.intervalo_padrao;
   if (!$("#yt-data").value) sugerirHorario();
   mostrarVideosYoutube();
+  carregarLinks();
 }
 
 function importarRpa() {
@@ -572,6 +573,60 @@ $("#yt-subir").addEventListener("click", () => {
   if (!confirm(`Subir ${itens.length} vídeo(s) ${modo}?\n\nO Chrome do robô vai abrir e subir um por um. Não feche ele até acabar.`)) return;
   iniciar("youtube", { plano });
 });
+
+// ------------------------------------------------------------------ links no site
+
+estado.links = { videos: [], mostrar: 10 };
+
+async function carregarLinks() {
+  try {
+    // So os jogos: mosaico e afins nao tem partida no site.
+    estado.links.videos = (await api("/api/youtube/links")).filter((v) => v.jogo);
+  } catch (erro) {
+    $("#yt-links").replaceChildren(criar("li", { class: "vazio" }, erro.message));
+    return;
+  }
+  mostrarLinks();
+}
+
+function mostrarLinks() {
+  const { videos, mostrar } = estado.links;
+  const faltam = videos.filter((v) => v.link && !v.no_site).length;
+  $("#yt-links-contagem").textContent = faltam;
+  $("#yt-links-todos").dataset.faltam = faltam;
+  const lista = $("#yt-links");
+  lista.replaceChildren();
+  if (!videos.length) lista.append(criar("li", { class: "vazio" }, "Nenhum jogo subiu ainda."));
+  for (const v of videos.slice(0, mostrar)) {
+    const campo = criar("input", { type: "url", value: v.link, placeholder: "https://youtu.be/…", "aria-label": `Link do vídeo ${v.titulo}` });
+    const [classe, texto] = v.no_site ? ["ok", "no site"] : v.link ? ["pendente", "falta atribuir"] : ["revisar", "sem link"];
+    const quando = v.estreia === "privado" ? "privado" : `estreia ${v.estreia.slice(8, 10)}/${v.estreia.slice(5, 7)} ${v.estreia.slice(11)}`;
+    lista.append(criar("li", {},
+      criar("div", { class: "jogo-fila" },
+        criar("span", { class: "titulo-yt" }, v.titulo || v.arquivo),
+        criar("span", { class: "origem" }, v.no_site && v.onde ? `${quando} · ${v.onde}` : quando)),
+      criar("span", { class: `selo ${classe}` }, texto),
+      campo,
+      criar("button", { class: v.no_site ? "fantasma yt-atribuir" : "secundario yt-atribuir", onclick: () => atribuirLink(v, campo.value) },
+        v.no_site ? "De novo" : "Atribuir"),
+    ));
+  }
+  $("#yt-links-mais").classList.toggle("escondido", videos.length <= mostrar);
+  atualizarBotoesAcao();
+}
+
+function atribuirLink(video, link) {
+  link = link.trim();
+  if (!link) return avisar("Cole o link do vídeo no YouTube.", true);
+  iniciar("youtube_atribuir", { chave: video.chave, link: link === video.link ? null : link });
+}
+
+$("#yt-links-todos").addEventListener("click", () => {
+  const faltam = Number($("#yt-links-todos").dataset.faltam || 0);
+  if (!faltam) return avisar("Todos os vídeos com link já estão no site.");
+  iniciar("youtube_atribuir");
+});
+$("#yt-links-mais").addEventListener("click", () => { estado.links.mostrar += 20; mostrarLinks(); });
 
 // ------------------------------------------------------------------ configuracao
 
@@ -742,6 +797,8 @@ function atualizarBotoesAcao() {
   if (!rodando && !estado.fila.length) $("#acao-rodar").disabled = true;
   $("#yt-simular").disabled = rodando;
   $("#yt-login").disabled = rodando;
+  $("#yt-links-todos").disabled = rodando;
+  document.querySelectorAll(".yt-atribuir").forEach((b) => { b.disabled = rodando; });
   $("#yt-subir").disabled = rodando || (estado.yt ? montarPlanoYoutube().problemas.length > 0 : true);
   $("#acao-parar").classList.toggle("escondido", !rodando);
 }

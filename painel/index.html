@@ -154,6 +154,19 @@
         <code>youtube/historico.csv</code>, para nunca subir duas vezes. Se parar no meio, o vídeo que falhou
         pode ter ficado como <b>rascunho</b> no YouTube Studio: apague lá antes de tentar de novo.</p>
     </div>
+
+    <div class="cartao">
+      <div class="cartao-topo">
+        <h2>Links no site <span id="yt-links-contagem" class="contador" title="Vídeos com link que ainda não estão no site">0</span></h2>
+        <div class="grupo-botoes">
+          <button class="secundario" id="yt-links-todos">Atribuir todos</button>
+        </div>
+      </div>
+      <p class="nota">O link de cada vídeo que já subiu vai para a partida no site, e o telão do jogo passa a estreia.
+        O robô lê o link na hora do upload; nos vídeos que subiram antes disso, cole o link e clique em <b>Atribuir</b>.</p>
+      <ul id="yt-links" class="lista-links"></ul>
+      <button class="fantasma escondido" id="yt-links-mais">Mostrar mais</button>
+    </div>
   </section>
 
   <!-- ============================== CONFIG ============================== -->

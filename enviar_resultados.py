@@ -103,12 +103,14 @@ def descrever(dados: dict) -> str:
     return f"{c.get('time')} {c.get('gols')} x {f.get('gols')} {f.get('time')}"
 
 
-def enviar(url: str, token: str, corpo: bytes, partida_anterior: str = None) -> tuple:
+def enviar(url: str, token: str, corpo: bytes, partida_anterior: str = None,
+           caminho_api: str = CAMINHO_API) -> tuple:
     """Devolve (ok, resposta_em_dict). Erro HTTP nao e excecao: o site manda
     a mensagem em {"message": ...} e ela e o que interessa mostrar.
 
-    partida_anterior: id da partida que recebeu o envio anterior deste .json."""
-    endereco = url.rstrip("/") + CAMINHO_API
+    partida_anterior: id da partida que recebeu o envio anterior deste .json.
+    caminho_api: o atribuir_videos.py usa a mesma chamada em outra rota."""
+    endereco = url.rstrip("/") + caminho_api
     if partida_anterior:
         endereco += "?" + urllib.parse.urlencode({"partida": partida_anterior})
     pedido = urllib.request.Request(

@@ -395,15 +395,41 @@ def mostrar_plano(plano, playlist, miniatura: Path) -> None:
 # ==========================================================================
 
 
-def registrar(item) -> None:
+COLUNAS_HISTORICO = ["enviado_em", "arquivo", "tamanho", "titulo", "estreia", "gravado_em", "link"]
+
+
+def atualizar_cabecalho_historico() -> None:
+    """O historico antigo nao tinha gravado_em e link: acrescenta as colunas.
+
+    As linhas antigas ficam como estao (o csv le as colunas que faltam como
+    vazias); so o cabecalho muda, para as linhas novas caberem."""
+    if not config.HISTORICO.is_file():
+        return
+    with config.HISTORICO.open(encoding="utf-8", newline="") as f:
+        linhas = list(csv.reader(f, delimiter=";"))
+    if not linhas or linhas[0] == COLUNAS_HISTORICO:
+        return
+    linhas[0] = COLUNAS_HISTORICO
+    temporario = config.HISTORICO.with_suffix(".tmp")
+    with temporario.open("w", encoding="utf-8", newline="") as f:
+        csv.writer(f, delimiter=";").writerows(linhas)
+    temporario.replace(config.HISTORICO)
+
+
+def registrar(item, link: str | None) -> None:
+    """gravado_em e o mesmo do .json do extrair_eventos.py: liga o video ao
+    resultado enviado quando o painel atribui o link no site."""
+    atualizar_cabecalho_historico()
     novo = not config.HISTORICO.is_file()
     with config.HISTORICO.open("a", encoding="utf-8", newline="") as f:
         w = csv.writer(f, delimiter=";")
         if novo:
-            w.writerow(["enviado_em", "arquivo", "tamanho", "titulo", "estreia"])
+            w.writerow(COLUNAS_HISTORICO)
         estreia = f"{item['estreia']:%Y-%m-%d %H:%M}" if item["estreia"] else "privado"
+        info = item["video"].stat()
+        gravado_em = datetime.fromtimestamp(info.st_mtime).isoformat(timespec="seconds")
         w.writerow([f"{datetime.now():%Y-%m-%d %H:%M}", item["video"].name,
-                    item["video"].stat().st_size, item["titulo"], estreia])
+                    info.st_size, item["titulo"], estreia, gravado_em, link or ""])
 
 
 def mover_para_enviados(video: Path) -> None:
@@ -625,13 +651,15 @@ def main() -> int:
             s.verificar_login()
             for i, item in enumerate(plano, 1):
                 print(f"\n[{i}/{len(plano)}] {item['titulo']}")
-                s.enviar(item["video"], item["titulo"], descricao, playlist,
-                         item["estreia"], miniatura, pausar=args.pausar)
-                registrar(item)
+                link = s.enviar(item["video"], item["titulo"], descricao, playlist,
+                                item["estreia"], miniatura, pausar=args.pausar)
+                registrar(item, link)
                 mover_para_enviados(item["video"])
                 feitos += 1
                 print("      OK: privado" if item["estreia"] is None
                       else f"      OK: estreia {item['estreia']:%d/%m %H:%M}")
+                if link:
+                    print(f"      link: {link}")
         except (Exception, KeyboardInterrupt) as erro:
             print("\n" + "=" * 70)
             if isinstance(erro, KeyboardInterrupt):

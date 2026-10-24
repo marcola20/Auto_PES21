@@ -384,6 +384,7 @@ TAREFAS = {
     "youtube": {"titulo": "Subir no YouTube", "script": "youtube/upar_videos.py"},
     "youtube_login": {"titulo": "Entrar na conta do canal", "script": "youtube/login.py"},
     "youtube_importar": {"titulo": "Trazer do RPA_Youtube", "script": "youtube/importar_rpa.py"},
+    "youtube_atribuir": {"titulo": "Atribuir links no site", "script": "atribuir_videos.py"},
 }
 
 
@@ -507,6 +508,14 @@ def iniciar_tarefa(pedido: dict) -> None:
         argumentos = ["--simular"]
     elif nome == "youtube_importar" and pedido.get("pasta"):
         argumentos = [str(pedido["pasta"])]
+    elif nome == "youtube_atribuir":
+        # Sem chave: todos os que tem link novo. Com chave: so esse video.
+        if pedido.get("link"):
+            argumentos += ["--link", str(pedido["link"]).strip()]
+        if pedido.get("simular"):
+            argumentos.append("--simular")
+        if pedido.get("chave"):
+            argumentos += ["--", str(pedido["chave"])]
     elif nome == "youtube":
         # As respostas que o upar_videos.py perguntaria no terminal; ele
         # confere tudo de novo (video ainda na pasta, rodada, horario).
@@ -539,6 +548,20 @@ def situacao_do_youtube() -> dict:
     dados = json.loads(saida)
     dados["playwright"] = importlib.util.find_spec("playwright") is not None
     return dados
+
+
+def links_do_youtube() -> list:
+    """O que ja subiu, com o link e se ele ja esta no site (atribuir_videos.py --listar)."""
+    resultado = subprocess.run(
+        [PYTHON, "atribuir_videos.py", "--listar"],
+        cwd=PASTA_PROJETO, capture_output=True, timeout=60,
+        env=dict(os.environ, PYTHONIOENCODING="utf-8"),
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    saida = resultado.stdout.decode("utf-8", errors="replace").strip()
+    if resultado.returncode != 0:
+        erro = resultado.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(saida or erro or "atribuir_videos.py --listar falhou")
+    return json.loads(saida)
 
 
 def caminho_da_foto(pedido: str):
@@ -602,6 +625,8 @@ class Pedido(BaseHTTPRequestHandler):
                 return self._json({"app": ID_DO_PAINEL})
             if rota == "/api/youtube":
                 return self._json(situacao_do_youtube())
+            if rota == "/api/youtube/links":
+                return self._json(links_do_youtube())
             if rota == "/api/times":
                 return self._json(times.TIMES)
             if rota == "/api/competicoes":
