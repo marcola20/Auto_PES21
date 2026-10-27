@@ -63,6 +63,9 @@ SEMELHANCA_MESMO_JOGADOR = 0.9
 # Time do times.py com outro nome na base, quando o "comeca igual" de
 # elenco_do_time nao resolve sozinho ("Sport" tambem casa com Sporting CP...).
 NOME_NA_BASE = {"Sport": "Sport Recife"}
+# Idem para o site, que guarda o nome curto ("Juventude"): o "comeca igual"
+# so pega quando o nome do times.py e o mais curto dos dois.
+NOME_NO_SITE = {"EC Juventude": "Juventude"}
 # Elenco atual de cada time no site (url do caminhos.ini; rota publica, sem
 # token). Soma com a base: ela nao sabe das transferencias da liga. O Render
 # demora para acordar o site, dai o timeout longo; sem resposta, vale a copia
@@ -1446,7 +1449,7 @@ def elenco_do_time(time):
     if not time:
         return None
     base = _do_time(elencos(), NOME_NA_BASE.get(time, time))
-    site = _do_time(elencos_do_site(), time)
+    site = _do_time(elencos_do_site(), NOME_NO_SITE.get(time, time))
     if base is None and site is None:
         return None
     chaves_base = [chave_base(n) for n in base or []]
