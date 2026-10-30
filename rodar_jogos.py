@@ -17,7 +17,8 @@ from caminhos import PASTA_VIDEOS as PASTA_GRAVACOES   # em caminhos.ini
 EXTENSOES_VIDEO = (".mp4", ".mkv", ".mov", ".avi")
 
 SEGUNDOS_CONTAGEM = 10       # tempo para voltar ao PES no inicio
-MINUTOS_LIMITE_PARTIDA = 30  # se passar disso sem fim de jogo, aborta
+MINUTOS_LIMITE_PARTIDA = 40  # se passar disso sem fim de jogo, aborta (mata-mata
+                             # empatado ainda tem os penaltis e os replays deles)
 
 SEGUNDOS_APOS_CONFIRMAR  = 1.5  # espera a tela trocar depois de um Enter
 
@@ -528,6 +529,10 @@ def acompanhar_partida() -> bool:
         painel VERDE "Intervalo"   -> confirmar
         painel ESCURO "Intervalo"  -> confirmar (botao "2o tempo")
 
+    Empate no mata-mata: aos 90 min vem o MESMO painel escuro "Intervalo", com
+    o botao "Disputa de penaltis" ja selecionado. Confirmar comeca os penaltis,
+    e depois deles vem o fim de jogo de sempre (replays, paineis verde e escuro).
+
     O fim de jogo tem a MESMA estrutura de dois paineis, mas ali o painel
     escuro e o nosso sinal de parada - ele fica esperando input para sempre,
     entao e impossivel perder.
@@ -544,6 +549,7 @@ def acompanhar_partida() -> bool:
     limite = inicio + MINUTOS_LIMITE_PARTIDA * 60
     confirmados = 0
     replays = 0
+    intervalos = 0
 
     # Para detectar tela congelada. Guardo uma versao BEM reduzida da tela: a
     # comparacao fica barata e mudancas pequenas (um jogador andando ao fundo)
@@ -580,7 +586,9 @@ def acompanhar_partida() -> bool:
         # 2) Painel escuro do intervalo: confirmar leva ao 2o tempo.
         if visao.eh_intervalo(tela, template_intervalo):
             limpar_linha()
-            detalhe(f"intervalo: painel escuro, indo para o 2o tempo ({minutos():.1f} min)")
+            intervalos += 1
+            seguinte = "o 2o tempo" if intervalos == 1 else "a disputa de penaltis"
+            detalhe(f"intervalo: painel escuro, indo para {seguinte} ({minutos():.1f} min)")
             teclado.confirmar()
             confirmados += 1
             time.sleep(PAUSA_APOS_PAINEL)
