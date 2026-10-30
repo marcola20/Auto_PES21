@@ -265,34 +265,70 @@ def nome_do_video(casa: str, fora: str) -> str:
     return f"{casa} vs {fora}"
 
 
+# Fases do mata-mata no site (enum FaseKnockout), na ordem do chaveamento.
+FASES_MATA_MATA = [
+    ("Play-in", {1, 2, 3}),
+    ("Quartas de final", {4, 5, 6, 7}),
+    ("Semifinal", {8, 9}),
+    ("Final", {10}),
+]
+
+
+def partida_para_pagina(casa_site: str, fora_site: str, jogada: bool,
+                        gols_casa, gols_fora, wo: bool, na_pasta: set) -> dict:
+    casa = times.time_do_site(casa_site)
+    fora = times.time_do_site(fora_site)
+    if not casa or not fora:
+        situacao = "sem_time"
+    elif jogada:
+        situacao = "jogado"
+    elif nome_do_video(casa, fora) in na_pasta:
+        situacao = "gravado"
+    else:
+        situacao = "pendente"
+    return {
+        "casa_site": casa_site, "fora_site": fora_site,
+        "casa": casa, "fora": fora, "situacao": situacao,
+        "placar": f"{gols_casa} x {gols_fora}" if jogada and gols_casa is not None else None,
+        "wo": wo,
+    }
+
+
 def rodadas_da_liga(liga_id: str) -> list:
     rodadas = pedir_ao_site(f"/api/liga/{urllib.parse.quote(liga_id)}/rodadas")
+    # O mata-mata (Copa) fica fora das rodadas: o jogo so vira partida quando o
+    # resultado chega, entao antes disso ele so existe no chaveamento.
+    mata_mata = pedir_ao_site(f"/api/liga/{urllib.parse.quote(liga_id)}/knockout") or []
+    do_mata_mata = {k["partidaId"] for k in mata_mata if k.get("partidaId")}
     na_pasta = nomes_na_pasta_de_videos()
     resultado = []
     for rodada in rodadas:
-        partidas = []
-        for p in rodada.get("partidas") or []:
-            casa = times.time_do_site(p["timeCasaNome"])
-            fora = times.time_do_site(p["timeForaNome"])
-            jogada = p.get("status") == 2 or p.get("isWO")
-            if not casa or not fora:
-                situacao = "sem_time"
-            elif jogada:
-                situacao = "jogado"
-            elif nome_do_video(casa, fora) in na_pasta:
-                situacao = "gravado"
-            else:
-                situacao = "pendente"
-            partidas.append({
-                "casa_site": p["timeCasaNome"], "fora_site": p["timeForaNome"],
-                "casa": casa, "fora": fora, "situacao": situacao,
-                "placar": f"{p.get('golsCasa')} x {p.get('golsFora')}" if jogada else None,
-                "wo": bool(p.get("isWO")),
-            })
+        # A partida do mata-mata ja criada aparece tambem numa rodada: fica so na fase dela.
+        jogos = [p for p in rodada.get("partidas") or [] if p.get("partidaId") not in do_mata_mata]
+        if not jogos and rodada.get("partidas"):
+            continue
+        partidas = [partida_para_pagina(p["timeCasaNome"], p["timeForaNome"],
+                                        p.get("status") == 2 or p.get("isWO"),
+                                        p.get("golsCasa"), p.get("golsFora"),
+                                        bool(p.get("isWO")), na_pasta)
+                    for p in jogos]
         resultado.append({
             "numero": rodada.get("numero"), "titulo": rodada.get("titulo"),
             "data": rodada.get("dataHora"), "partidas": partidas,
         })
+    for nome, fases in FASES_MATA_MATA:
+        # So os jogos com os dois times definidos (a semi espera as quartas).
+        jogos = sorted((k for k in mata_mata
+                        if k.get("fase") in fases and k.get("timeCasaNome") and k.get("timeForaNome")),
+                       key=lambda k: k["fase"])
+        if not jogos:
+            continue
+        # Em andamento = empatou e espera os penaltis: o jogo ja foi simulado.
+        partidas = [partida_para_pagina(k["timeCasaNome"], k["timeForaNome"],
+                                        bool(k.get("vencedorId")) or k.get("partidaStatus") in (1, 2),
+                                        k.get("golsCasa"), k.get("golsFora"), False, na_pasta)
+                    for k in jogos]
+        resultado.append({"numero": None, "titulo": nome, "data": None, "partidas": partidas})
     return resultado
 
 
