@@ -55,6 +55,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import atualizar
 import times
 
 PASTA_PROJETO = Path(__file__).resolve().parent
@@ -600,6 +601,60 @@ def links_do_youtube() -> list:
     return json.loads(saida)
 
 
+# --------------------------------------------------------------------------
+# Atualizacao (atualizar.py)
+# --------------------------------------------------------------------------
+# A pagina pergunta ao abrir; o GitHub so e consultado de hora em hora.
+
+MINUTOS_ENTRE_CONSULTAS_GITHUB = 60
+_atualizacao = {"quando": 0.0, "info": None}
+# main() olha isto quando o servidor para: True = abrir o painel de novo
+# (a versao nova) em vez de so sair.
+reabrir_depois = False
+
+
+def situacao_da_atualizacao(forcar: bool = False) -> dict:
+    agora = time.time()
+    if forcar or _atualizacao["info"] is None or \
+            agora - _atualizacao["quando"] > MINUTOS_ENTRE_CONSULTAS_GITHUB * 60:
+        _atualizacao.update(quando=agora, info=atualizar.procurar())
+    info = dict(_atualizacao["info"])
+    info.pop("url", None)
+    return info
+
+
+def aplicar_atualizacao(servidor) -> str:
+    """Troca o codigo pela versao nova e agenda o painel para reabrir.
+
+    Segura a trava da tarefa o tempo todo: nenhum script comeca no meio da
+    troca de arquivos."""
+    global reabrir_depois
+    with tarefa.trava:
+        if tarefa.rodando():
+            raise RuntimeError(f"{tarefa.titulo} esta rodando. Atualize quando terminar.")
+        situacao_da_atualizacao(forcar=True)
+        try:
+            versao = atualizar.aplicar(_atualizacao["info"], falar=print)
+        except atualizar.ErroAtualizacao as erro:
+            raise RuntimeError(str(erro))
+    reabrir_depois = True
+    # Em outra thread: shutdown() espera este pedido terminar.
+    threading.Thread(target=servidor.shutdown, daemon=True).start()
+    return versao
+
+
+def reabrir_painel() -> None:
+    """Sobe o painel de novo (agora com o codigo novo), sem abrir outra aba:
+    a pagina que ja esta aberta espera ele voltar e recarrega."""
+    exe = Path(sys.executable)
+    sem_janela = exe.with_name("pythonw.exe")
+    exe = sem_janela if sem_janela.is_file() else exe
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen([str(exe), str(PASTA_PROJETO / "painel.py"), "--sem-navegador"],
+                     cwd=PASTA_PROJETO, creationflags=flags, close_fds=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def caminho_da_foto(pedido: str):
     """So deixa abrir os .png das pastas de diagnostico do projeto."""
     caminho = (PASTA_PROJETO / pedido).resolve()
@@ -658,7 +713,9 @@ class Pedido(BaseHTTPRequestHandler):
             if rota == "/api/config":
                 return self._json(config_para_pagina())
             if rota == "/api/ping":
-                return self._json({"app": ID_DO_PAINEL})
+                return self._json({"app": ID_DO_PAINEL, "versao": atualizar.versao_local()})
+            if rota == "/api/atualizacao":
+                return self._json(situacao_da_atualizacao(forcar="forcar" in consulta))
             if rota == "/api/youtube":
                 return self._json(situacao_do_youtube())
             if rota == "/api/youtube/links":
@@ -726,6 +783,8 @@ class Pedido(BaseHTTPRequestHandler):
             if rota == "/api/tarefa/parar":
                 tarefa.parar()
                 return self._json({"ok": True})
+            if rota == "/api/atualizar":
+                return self._json({"versao": aplicar_atualizacao(self.server)})
             if rota == "/api/atalho":
                 import criar_atalho
                 return self._json({"caminho": str(criar_atalho.criar_atalho())})
@@ -817,6 +876,11 @@ def main() -> int:
         if tarefa.rodando():
             print("ATENCAO: a tarefa que estava rodando foi interrompida junto.")
             tarefa.parar()
+    if reabrir_depois:
+        # Solta a porta antes: o painel novo precisa dela.
+        servidor.server_close()
+        print("Abrindo a versao nova do painel.")
+        reabrir_painel()
     return 0
 
 

@@ -13,6 +13,7 @@
   <div class="marca">
     <span class="bola" aria-hidden="true"></span>
     <h1>Auto PES21</h1>
+    <span id="versao" class="versao"></span>
   </div>
   <nav class="abas" role="tablist">
     <button role="tab" data-aba="jogos" class="ativa">Jogos</button>
@@ -23,6 +24,15 @@
   <div id="pilula" class="pilula ociosa">Parado</div>
   <button class="fantasma" id="fechar-painel" title="Desliga o painel (o atalho abre de novo)">Fechar painel</button>
 </header>
+
+<div id="faixa-atualizacao" class="faixa-atualizacao escondido" role="status">
+  <div class="faixa-corpo">
+    <b id="faixa-titulo"></b>
+    <span id="faixa-texto" class="nota"></span>
+    <details id="faixa-notas" class="escondido"><summary>O que mudou</summary><pre id="faixa-notas-texto"></pre></details>
+  </div>
+  <button class="primario" id="faixa-botao">Atualizar agora</button>
+</div>
 
 <div id="painel-fechado" class="tela-fechado escondido">
   <div class="cartao">

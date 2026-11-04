@@ -695,6 +695,51 @@ $("#fechar-painel").addEventListener("click", async () => {
   }
 });
 
+// ------------------------------------------------------------------ versao nova
+
+async function carregarAtualizacao() {
+  let info;
+  try { info = await api("/api/atualizacao"); } catch { return; }
+  $("#versao").textContent = info.local === "dev" ? "dev" : `v${info.local}`;
+  if (!info.nova) return;
+  $("#faixa-titulo").textContent = `Versão ${info.nova} disponível`;
+  $("#faixa-texto").textContent = info.pode_aplicar
+    ? `Você está na ${info.local}. Seus dados (caminhos, fila, histórico, login do YouTube) continuam como estão.`
+    : `Não dá para atualizar por aqui: ${info.motivo}.`;
+  $("#faixa-botao").classList.toggle("escondido", !info.pode_aplicar);
+  $("#faixa-notas-texto").textContent = info.notas || "";
+  $("#faixa-notas").classList.toggle("escondido", !info.notas);
+  $("#faixa-atualizacao").classList.remove("escondido");
+  $("#faixa-botao").dataset.nova = info.nova;
+}
+
+$("#faixa-botao").addEventListener("click", async () => {
+  const botao = $("#faixa-botao");
+  const nova = botao.dataset.nova;
+  if (estado.tarefa.rodando) return avisar(`${estado.tarefa.titulo} está rodando. Atualize quando terminar.`, true);
+  if (!confirm(`Atualizar para a versão ${nova}? O painel fecha e abre de novo sozinho.`)) return;
+  botao.disabled = true;
+  botao.textContent = "Atualizando…";
+  try {
+    await api("/api/atualizar", {});
+  } catch (erro) {
+    botao.disabled = false;
+    botao.textContent = "Atualizar agora";
+    return avisar(`A atualização falhou: ${erro.message}`, true);
+  }
+  // O painel fecha e o novo sobe na mesma porta: espera ele responder.
+  $("#faixa-texto").textContent = "Abrindo a versão nova do painel…";
+  const limite = Date.now() + 60000;
+  while (Date.now() < limite) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const ping = await api("/api/ping");
+      if (ping.versao === nova) return location.reload();
+    } catch {}
+  }
+  avisar("A versão nova foi instalada, mas o painel não voltou. Abra pelo atalho Auto PES21.", true);
+});
+
 // ------------------------------------------------------------------ tarefas
 
 async function iniciar(tarefa, extra = {}) {
@@ -847,4 +892,5 @@ async function acompanhar() {
   try { aba = localStorage.getItem("aba") || "jogos"; } catch {}
   mostrarAba(aba);
   carregarCompeticoes();
+  carregarAtualizacao();
 })();

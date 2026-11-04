@@ -23,6 +23,16 @@ rodar os quatro passos com um clique.
 
 ## 1. Configurar (uma vez)
 
+> **Só quer usar, sem mexer em código?** Baixe o pacote pronto em
+> [Releases](https://github.com/marcola20/Auto_PES21/releases/latest)
+> (`Auto_PES21-v….zip`). Ele já traz o Python e todas as bibliotecas:
+> descompacte (fora de "Arquivos de Programas"), dê dois cliques em
+> `Abrir painel.bat` e siga o `LEIA-ME.txt`. Pule direto para a 1.3 e a 1.4
+> (pastas e jogo) — elas são feitas pelo painel, aba **Configuração**.
+> Quando sair versão nova, o painel mostra uma faixa verde no topo:
+> um clique atualiza, e seus dados (caminhos, fila, histórico, login do
+> YouTube) continuam como estão. Veja a seção 4.
+
 ### 1.1 O que precisa ter no PC
 
 - **Windows 10/11 em português** (o OCR do Windows, com o idioma Português,
@@ -39,9 +49,10 @@ rodar os quatro passos com um clique.
 ```
 git clone https://github.com/marcola20/Auto_PES21.git
 cd Auto_PES21
-pip install pillow pydirectinput imageio-ffmpeg winrt-runtime winrt-Windows.Media.Ocr winrt-Windows.Graphics.Imaging winrt-Windows.Storage.Streams winrt-Windows.Globalization winrt-Windows.Foundation winrt-Windows.Foundation.Collections
-pip install playwright
+pip install -r requirements.txt
 ```
+
+O `requirements.txt` tem as versões exatas que o pacote das Releases usa.
 
 O `playwright` é só para subir no YouTube. Não precisa de `playwright install`:
 ele usa o Chrome que já está no PC.
@@ -312,3 +323,35 @@ jogo aberto na tela certa:
 Os templates de abertura (`templates/abertura_*.png`) são recortes da tela
 de título, aviso, menu e submenu. Se não baterem, `abrir_jogo.py --medir` vai
 mostrar a tela como não reconhecida.
+
+---
+
+## 4. Pacote e atualização (para quem usa sem programar)
+
+Quem baixa o zip das Releases recebe o código **e** um Python próprio
+(pasta `python/`), montados pelo `empacotar.py`. O painel dessa cópia
+consulta o GitHub ao abrir e, se houver versão nova, mostra a faixa
+**"Versão X disponível"**. O botão baixa o `codigo.zip` da release e troca
+só os arquivos de código (a lista do `MANIFESTO.txt`); se o
+`requirements.txt` mudou, instala as bibliotecas antes. Depois o painel fecha
+e abre sozinho na versão nova. Pelo terminal: `python atualizar.py --aplicar`.
+
+Nunca são tocados: `caminhos.ini`, `fila_jogos.json`, `gravacoes.json`,
+`resultados_enviados.json`, `elencos_site.json`, `videos_atribuidos.json`,
+`youtube/historico.csv`, `youtube/perfil_chrome/` e as pastas de diagnóstico.
+Numa pasta com `.git` (a de desenvolvimento) o painel não oferece atualização:
+ali é `git pull`.
+
+### 4.1 Publicar uma versão nova
+
+```
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+O GitHub (`.github/workflows/release.yml`) monta o pacote e cria a release
+com os dois zips; as notas são os títulos dos commits desde a tag anterior —
+é o que aparece em "O que mudou" no painel de quem atualiza. Leva uns 5
+minutos. Só vai o que está **commitado** (o pacote sai do `git ls-files`).
+
+Para testar o pacote aqui antes: `python empacotar.py 1.2.0` (sai em `dist/`).

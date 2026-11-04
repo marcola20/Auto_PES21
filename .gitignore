@@ -34,3 +34,9 @@ gravacoes.json
 gravacoes.tmp
 caminhos.tmp
 plano_youtube.json
+
+# Gerados pelo empacotar.py (so o pacote tem) e a pasta de saida dele.
+VERSAO
+MANIFESTO.txt
+dist/
+build/

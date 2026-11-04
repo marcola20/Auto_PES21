@@ -1,0 +1,45 @@
+# Publica uma versao nova do Auto_PES21 quando voce manda uma tag v*:
+#   git tag v1.2.0
+#   git push origin v1.2.0
+# O GitHub monta o pacote (empacotar.py, com o Python embutido) e cria a
+# release com os dois zips. O painel de quem instalou ve a faixa "Versao nova".
+name: Publicar versao
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  pacote:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0          # o historico, para as notas da versao
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Montar o pacote
+        run: python empacotar.py "${GITHUB_REF_NAME}"
+
+      # As notas sao os titulos dos commits desde a versao anterior: e o que
+      # aparece em "O que mudou" na faixa do painel.
+      - name: Notas da versao
+        run: |
+          anterior=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          if [ -n "$anterior" ]; then intervalo="$anterior..${GITHUB_REF_NAME}"; else intervalo="-20 ${GITHUB_REF_NAME}"; fi
+          git log --no-merges --format='- %s' $intervalo > notas.md
+          cat notas.md
+
+      - name: Publicar a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/*.zip --title "${GITHUB_REF_NAME}" --notes-file notas.md
