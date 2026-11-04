@@ -59,7 +59,6 @@ SELETORES = {
     "configurar_estreia": 'button[aria-label="Configurar Estreia"]',
     "dialogo_estreia": "tp-yt-paper-dialog, [role='dialog']",
     "opcao_dropdown": "tp-yt-paper-item, [role='option'], [role='menuitem'], [role='menuitemradio']",
-    "progresso": "ytcp-video-upload-progress .progress-label",
     "concluir": "#done-button",
     "ok_verificando": "ytcp-prechecks-warning-dialog #primary-action-button button",
     "fechar_aviso": ("ytcp-video-share-dialog #close-button, "
@@ -125,8 +124,50 @@ JS_LINK_DO_VIDEO = r"""
 })()
 """
 
+# Situacao de um upload que segue numa aba depois do Programar. A janela de
+# upload fechou, entao le os rotulos de progresso que sobram na pagina (a
+# linha do video na lista); sem nenhum, o painel de uploads do canto.
+JS_SITUACAO_UPLOAD = """
+(() => {
+  const textos = (sel) => {
+    const r = [];
+    const busca = (raiz) => {
+      for (const el of raiz.querySelectorAll(sel)) {
+        const t = (el.innerText || el.textContent || '').trim();
+        if (t) r.push(t);
+      }
+      for (const n of raiz.querySelectorAll('*')) if (n.shadowRoot) busca(n.shadowRoot);
+    };
+    busca(document);
+    return r;
+  };
+  const rotulos = textos('ytcp-video-upload-progress .progress-label');
+  return rotulos.length ? rotulos : textos('ytcp-multi-progress-monitor, ytcp-uploads-mini-indicator');
+})()
+"""
+
 MS_CURTO = 15_000
 MS_LONGO = 60_000
+
+# Depois do Programar, uma aba que passa este tempo sem mostrar NENHUM rotulo
+# de progresso e dada como "nao sei": o arquivo nao e movido (pode estar
+# subindo ainda) e o robo segue.
+MINUTOS_SEM_SINAL = 5
+
+
+def _classificar_upload(texto: str) -> str:
+    """'erro', 'enviando', 'terminou' ou 'sem sinal'.
+
+    So conta como terminado com texto POSITIVO de fim de envio. Texto
+    desconhecido = sem sinal (ja errei achando que "Envio em 24%" era fim,
+    porque esperava "Enviando 24%")."""
+    if re.search(r"falh|erro|cancelad|rejeitad", texto, re.I):
+        return "erro"
+    if re.search(r"envio em|enviando|carregando|fazendo (o )?upload|uploading", texto, re.I):
+        return "enviando"
+    if re.search(r"conclu|processa|verifica", texto, re.I):
+        return "terminou"
+    return "sem sinal"
 
 
 class ErroStudio(Exception):
@@ -204,12 +245,18 @@ class Studio:
         self._pw = sync_playwright().start()
         self._navegador = self._pw.chromium.connect_over_cdp(
             f"http://127.0.0.1:{config.PORTA_DEPURACAO}")
-        self.pagina = self._navegador.contexts[0].new_page()
+        self._contexto = self._navegador.contexts[0]
+        self.pagina = self._contexto.new_page()
         self.etapa = "inicio"
+        # Videos ja programados cujo upload continua na propria aba. Cada video
+        # sobe numa aba: abrir a tela de upload de novo na mesma aba cancelaria
+        # o envio que ainda esta rodando.
+        self.enviando: list[dict] = []
         return self
 
     def __exit__(self, *_):
-        # O Chrome fica aberto de proposito: da para conferir o resultado.
+        # O Chrome fica aberto de proposito: da para conferir o resultado, e
+        # um upload que ainda nao terminou continua na aba dele.
         self._pw.stop()
 
     # ---------------------------------------------------------------------
@@ -291,8 +338,14 @@ class Studio:
                pausar: bool = False) -> str | None:
         """estreia=None sobe o video como PRIVADO, sem agendar nada.
 
+        Clica em Programar sem esperar o upload chegar a 100%: o envio continua
+        na aba, que fica em self.enviando, e o proximo video abre em outra.
+        aguardar_uploads() espera eles no fim.
+
         Devolve o link do video, ou None se a janela nao mostrou (nao para o
         envio: o link pode ser colado depois no painel)."""
+        if any(e["pagina"] is self.pagina for e in self.enviando):
+            self.pagina = self._contexto.new_page()
         p = self.pagina
 
         self._passo("abrir tela de upload")
@@ -310,9 +363,6 @@ class Studio:
 
         self.preencher(titulo, descricao, playlist, estreia, miniatura)
 
-        self._passo("aguardar upload terminar")
-        self._aguardar_upload()
-
         if estreia is not None and estreia < datetime.now() + timedelta(minutes=config.MINUTOS_MARGEM_MINIMA):
             raise self._erro(f"a estreia ({estreia:%H:%M}) ficou perto demais do horario atual")
 
@@ -322,6 +372,8 @@ class Studio:
             input("      >> Confira a tela. Enter para clicar em PROGRAMAR (Ctrl+C cancela)... ")
 
         self.programar(privado=estreia is None)
+        self.enviando.append({"pagina": p, "video": video, "estreia": estreia,
+                              "ultimo": "", "sem_sinal_desde": None, "avisou_estreia": False})
         return link
 
     def ler_link(self) -> str | None:
@@ -520,7 +572,19 @@ class Studio:
     def programar(self, privado: bool = False) -> None:
         p = self.pagina
         self._passo("clicar em Salvar" if privado else "clicar em Programar")
-        self._visivel(SELETORES["concluir"]).click()
+        botao = self._visivel(SELETORES["concluir"])
+        # Com o upload no comeco o botao ja vem liberado; se um dia nao vier,
+        # espera o Studio liberar em vez de clicar num botao morto.
+        limite = time.time() + config.MINUTOS_LIMITE_UPLOAD * 60
+        avisou = False
+        while botao.get_attribute("aria-disabled") == "true" or botao.get_attribute("disabled") is not None:
+            if not avisou:
+                print("        o botao ainda esta desabilitado; esperando o Studio liberar")
+                avisou = True
+            if time.time() > limite:
+                raise self._erro(f"o botao nao liberou em {config.MINUTOS_LIMITE_UPLOAD} minutos")
+            p.wait_for_timeout(5000)
+        botao.click()
         limite = time.time() + MS_LONGO / 1000
         while time.time() < limite:
             # "Ainda estamos verificando seu conteudo" (verificacao de direitos
@@ -540,26 +604,57 @@ class Studio:
             p.wait_for_timeout(1000)
         raise self._erro("o Studio nao confirmou (a janela continuou aberta)")
 
-    def _aguardar_upload(self) -> None:
-        rotulo = self.pagina.locator(SELETORES["progresso"]).first
+    def _situacao_upload(self, pagina) -> tuple[str, str]:
+        """(estado, texto) do upload que segue numa aba; ver _classificar_upload."""
+        try:
+            textos = pagina.evaluate(JS_SITUACAO_UPLOAD)
+        except ErroPlaywright as erro:
+            return "erro", f"a aba do upload fechou ou travou ({str(erro).splitlines()[0]})"
+        texto = _normalizar(" | ".join(textos or []))
+        return _classificar_upload(texto), texto
+
+    def aguardar_uploads(self) -> list[tuple[Path, bool, str]]:
+        """Espera os uploads que continuaram nas abas depois do Programar.
+
+        Devolve (video, terminou, detalhe) de cada um. terminou=False quando o
+        upload deu erro ou quando nao deu para ver o fim: nesses casos o arquivo
+        nao pode sair da pasta (o Chrome pode estar lendo ele ainda)."""
+        resultado = []
+        if not self.enviando:
+            return resultado
+        self.etapa = "aguardar uploads em segundo plano"
+        print(f"\nEsperando {len(self.enviando)} upload(s) terminar(em) nas abas do Chrome...")
         limite = time.time() + config.MINUTOS_LIMITE_UPLOAD * 60
-        ultimo = ""
-        while time.time() < limite:
-            try:
-                texto = _normalizar(rotulo.inner_text(timeout=MS_CURTO))
-            except ErroPlaywright:
-                texto = ""
-            if texto and texto != ultimo:
-                print(f"        {texto}")
-                ultimo = texto
-            if re.search(r"falh|erro|cancelad|rejeitad", texto, re.I):
-                raise self._erro(f"o upload deu problema: {texto}")
-            # So conta como terminado com texto POSITIVO de fim de envio. Texto
-            # desconhecido = continua esperando (ja errei achando que "Envio em
-            # 24%" era fim, porque esperava "Enviando 24%").
-            enviando = re.search(r"envio em|enviando|carregando|fazendo (o )?upload|uploading", texto, re.I)
-            terminou = re.search(r"conclu|processa|verifica", texto, re.I)
-            if terminou and not enviando:
-                return
-            time.sleep(10)
-        raise self._erro(f"o upload passou de {config.MINUTOS_LIMITE_UPLOAD} minutos")
+        while self.enviando and time.time() < limite:
+            for envio in list(self.enviando):
+                nome = envio["video"].stem
+                estado, texto = self._situacao_upload(envio["pagina"])
+                if texto and texto != envio["ultimo"]:
+                    print(f"  {nome}: {texto}")
+                    envio["ultimo"] = texto
+                if estado == "sem sinal":
+                    envio["sem_sinal_desde"] = envio["sem_sinal_desde"] or time.time()
+                    if time.time() - envio["sem_sinal_desde"] > MINUTOS_SEM_SINAL * 60:
+                        resultado.append((envio["video"], False,
+                                          f"a aba passou {MINUTOS_SEM_SINAL} min sem mostrar o progresso"))
+                        self.enviando.remove(envio)
+                    continue
+                envio["sem_sinal_desde"] = None
+                if estado == "erro":
+                    resultado.append((envio["video"], False, f"o upload deu problema: {texto}"))
+                    self.enviando.remove(envio)
+                elif estado == "terminou":
+                    print(f"  {nome}: upload terminou")
+                    resultado.append((envio["video"], True, texto))
+                    self.enviando.remove(envio)
+                elif (envio["estreia"] is not None and not envio["avisou_estreia"]
+                      and datetime.now() + timedelta(minutes=2) > envio["estreia"]):
+                    print(f"  AVISO: {nome} estreia as {envio['estreia']:%H:%M} e o upload ainda nao terminou")
+                    envio["avisou_estreia"] = True
+            if self.enviando:
+                time.sleep(10)
+        for envio in self.enviando:
+            resultado.append((envio["video"], False,
+                              f"o upload passou de {config.MINUTOS_LIMITE_UPLOAD} minutos"))
+        self.enviando = []
+        return resultado

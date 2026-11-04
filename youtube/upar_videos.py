@@ -29,7 +29,10 @@ O QUE ELE FAZ:
             (Semi -> "Semifinal", Final -> "Final").
   - Descricao do .txt, playlist da edicao, "nao e para criancas", estreia com
     contagem de 1 minuto e tema Esportes.
-  - Cada video programado vai para a subpasta Enviados e para historico.csv.
+  - Clica em Programar sem esperar o upload chegar a 100%: o envio continua
+    na aba dele e o proximo video abre em outra. No fim espera os uploads.
+  - Cada video programado vai para historico.csv na hora, e para a subpasta
+    Enviados quando o upload termina.
 
 REGRA DE OURO: na duvida, PARAR. Se qualquer passo nao conferir, o script
 salva print + HTML em diagnostico/ e para tudo. O video que falhou pode ter
@@ -451,6 +454,30 @@ def mover_para_enviados(video: Path) -> None:
           f"Ele ja esta no historico.csv, entao nao sobe de novo.")
 
 
+def avisar_uploads_abertos(enviando: list[dict]) -> None:
+    print("  Estes uploads ja foram programados e continuam nas abas do Chrome:")
+    for envio in enviando:
+        print(f"    - {envio['video'].name}")
+    print("  NAO feche o Chrome antes de eles terminarem. Os arquivos ficaram na pasta (ja estao")
+    print(f"  no historico.csv, nao sobem de novo); mova para {config.SUBPASTA_ENVIADOS} depois.")
+
+
+def terminar_uploads(s) -> bool:
+    """Espera os uploads que continuaram nas abas e move os que terminaram.
+
+    So move depois do fim: o Chrome le o arquivo do disco enquanto envia."""
+    tudo_certo = True
+    for video, terminou, detalhe in s.aguardar_uploads():
+        if terminou:
+            mover_para_enviados(video)
+            continue
+        tudo_certo = False
+        print(f"  ERRO: {video.name}: {detalhe}")
+        print("    O arquivo ficou na pasta (ja esta no historico.csv, nao sobe de novo).")
+        print(f"    Confira o video no Studio; se subiu certo, mova para {config.SUBPASTA_ENVIADOS}.")
+    return tudo_certo
+
+
 # ==========================================================================
 # SEM PERGUNTAS (o painel do Auto_PES21)
 # ==========================================================================
@@ -653,13 +680,18 @@ def main() -> int:
                 print(f"\n[{i}/{len(plano)}] {item['titulo']}")
                 link = s.enviar(item["video"], item["titulo"], descricao, playlist,
                                 item["estreia"], miniatura, pausar=args.pausar)
+                # Ja no historico: o upload ainda pode estar rodando, mas o
+                # video nao sobe de novo nem se o robo parar agora.
                 registrar(item, link)
-                mover_para_enviados(item["video"])
                 feitos += 1
                 print("      OK: privado" if item["estreia"] is None
                       else f"      OK: estreia {item['estreia']:%d/%m %H:%M}")
+                print("      (o upload continua na aba dele; sigo para o proximo)")
                 if link:
                     print(f"      link: {link}")
+            item = None
+            if not terminar_uploads(s):
+                return 1
         except (Exception, KeyboardInterrupt) as erro:
             print("\n" + "=" * 70)
             if isinstance(erro, KeyboardInterrupt):
@@ -679,6 +711,16 @@ def main() -> int:
                 print("  Ele pode ter ficado como RASCUNHO no Studio: apague la antes de rodar de novo.")
             print(f"  Programados antes da parada: {feitos} de {len(plano)}")
             print("=" * 70)
+            if s.enviando:
+                if isinstance(erro, KeyboardInterrupt):
+                    avisar_uploads_abertos(s.enviando)
+                else:
+                    # Os que ja foram programados seguem subindo: espera eles
+                    # para mover os arquivos, como se nao tivesse parado.
+                    try:
+                        terminar_uploads(s)
+                    except (Exception, KeyboardInterrupt):
+                        avisar_uploads_abertos(s.enviando)
             return 1
 
     print(f"\nPronto: {feitos} video(s) programado(s) como estreia.")

@@ -119,8 +119,14 @@ por um. O título é o nome do arquivo + rodada + competição:
 <nome do vídeo> | 3ª Rodada | Brasileirão - Série A
 ```
 
-Cada vídeo programado vai para a subpasta **`Enviados`** e é anotado em
-`historico.csv`, para nunca subir duas vezes.
+Não espera o upload chegar a 100%: preenchido tudo, clica em **Programar** e
+abre o próximo vídeo em outra aba — o envio anterior continua na aba dele (por
+isso não feche o Chrome enquanto o robô roda). No fim ele espera os uploads
+que ficaram rodando.
+
+Cada vídeo programado é anotado em `historico.csv` na hora, para nunca subir
+duas vezes, e vai para a subpasta **`Enviados`** quando o upload termina (antes
+disso o Chrome ainda está lendo o arquivo).
 
 ### 2.2 Opções
 
