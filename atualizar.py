@@ -18,6 +18,7 @@ Uso pelo terminal:
   python atualizar.py --aplicar  -> baixa e aplica
 """
 
+import certificados  # noqa: F401  (HTTPS com os certificados do certifi)
 import hashlib
 import json
 import shutil
@@ -44,7 +45,7 @@ SEGUNDOS_TIMEOUT = 30
 # engano no pacote, a atualizacao nao grava por cima.
 NUNCA_SOBRESCREVER = {
     "caminhos.ini", "fila_jogos.json", "gravacoes.json", "resultados_enviados.json",
-    "elencos_site.json", "videos_atribuidos.json", "plano_youtube.json",
+    "elencos_site.json", "videos_atribuidos.json", "plano_youtube.json", "pes-jogadores.json.gz",
     "youtube/historico.csv",
 }
 PASTAS_NUNCA = ("youtube/perfil_chrome", "diagnostico", "telas", "python/", ".git/")

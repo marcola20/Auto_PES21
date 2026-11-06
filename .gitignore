@@ -17,6 +17,9 @@ print_teste.png
 resultados_enviados.json
 # Ultima copia dos elencos do site (extrair_eventos.py), para rodar sem internet.
 elencos_site.json
+# Base do PES baixada do GitHub do site (extrair_eventos.py).
+pes-jogadores.json.gz
+pes-jogadores.json.part
 resultados_enviados.tmp
 # Controle do atribuir_videos.py: links de video ja gravados no site.
 videos_atribuidos.json

@@ -55,6 +55,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import certificados  # noqa: F401  (HTTPS com os certificados do certifi)
 import atualizar
 import times
 
@@ -182,11 +183,12 @@ def conferir_config(ini) -> dict:
         achou = expandir(pasta).is_dir()
         return {"ok": achou, "texto": "pasta encontrada" if achou else "essa pasta nao existe"}
 
-    if not base:
-        conf_base = {"ok": None, "texto": "vazio: os nomes ficam como o OCR leu"}
+    # Sem o arquivo, o extrair_eventos.py baixa a base do GitHub do site.
+    if base and expandir(base).is_file():
+        conf_base = {"ok": True, "texto": "arquivo encontrado"}
     else:
-        achou = expandir(base).is_file()
-        conf_base = {"ok": achou, "texto": "arquivo encontrado" if achou else "arquivo nao encontrado"}
+        conf_base = {"ok": None, "texto": ("arquivo nao encontrado: " if base else "vazio: ")
+                     + "o extrator baixa a base do GitHub do site"}
 
     chrome = valor_ini(ini, "youtube", "chrome")
     if chrome:
@@ -233,14 +235,34 @@ class ErroDoSite(Exception):
     pass
 
 
+def endereco_do_site(url: str) -> str:
+    """So o comeco do endereco: 'https://site.com/liga/3' -> 'https://site.com'.
+
+    A API fica sempre na raiz do site, e o site devolve a PAGINA dele (HTML,
+    codigo 200) para qualquer caminho que nao conhece. Quem cola o link da
+    barra do navegador numa tela do site recebia pagina em vez de dados.
+    (O caminhos.py tem a mesma funcao: o painel nao importa ele.)"""
+    url = url.strip().strip('"')
+    if not url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    partes = urllib.parse.urlsplit(url)
+    return f"{partes.scheme}://{partes.netloc}" if partes.netloc else url
+
+
 def pedir_ao_site(caminho: str):
-    url = valor_ini(ler_ini(), "site", "url")
+    url = endereco_do_site(valor_ini(ler_ini(), "site", "url"))
     if not url:
         raise ErroDoSite("A url do site esta vazia. Preencha na aba Configuracao.")
     try:
-        with urllib.request.urlopen(url.rstrip("/") + caminho,
-                                    timeout=SEGUNDOS_TIMEOUT_SITE) as resposta:
-            return json.loads(resposta.read().decode("utf-8"))
+        with urllib.request.urlopen(url + caminho, timeout=SEGUNDOS_TIMEOUT_SITE) as resposta:
+            texto = resposta.read().decode("utf-8", errors="replace")
+        try:
+            return json.loads(texto)
+        except ValueError:
+            raise ErroDoSite(f"{url} mandou uma pagina em vez dos dados. Confira a url na aba "
+                             "Configuracao: e so o endereco do site, ex.: https://cbfv-app.onrender.com")
     except urllib.error.HTTPError as erro:
         raise ErroDoSite(f"O site respondeu com erro {erro.code}.")
     except (urllib.error.URLError, TimeoutError, OSError) as erro:
@@ -771,6 +793,8 @@ class Pedido(BaseHTTPRequestHandler):
                     # Token vazio = manter o que ja esta guardado.
                     if chave == "token" and not valor and not pedido.get("apagar_token"):
                         continue
+                    if chave == "url":
+                        valor = endereco_do_site(valor)
                     novos[(secao, chave)] = valor
                 gravar_ini(novos)
                 return self._json(config_para_pagina())

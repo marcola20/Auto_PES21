@@ -70,6 +70,13 @@ NOME_NO_SITE = {"EC Juventude": "Juventude"}
 # token). Soma com a base: ela nao sabe das transferencias da liga. O Render
 # demora para acordar o site, dai o timeout longo; sem resposta, vale a copia
 # da ultima vez que deu certo.
+# A base do PES fica no repositorio do site, que e publico. Sem o arquivo
+# no caminhos.ini (quem nao tem o repositorio do site), baixa de la e guarda
+# ao lado deste script; renova uma vez por dia, e sem internet vale a copia.
+URL_BASE_JOGADORES = ("https://raw.githubusercontent.com/marcola20/Fc25_Draft/producao/"
+                      "src/Fc25Draft.Infra/Data/Pes/pes-jogadores.json.gz")
+CACHE_BASE_JOGADORES = "pes-jogadores.json.gz"
+HORAS_RENOVAR_BASE = 24
 CAMINHO_ELENCOS_SITE = "/api/teams/roster"
 SEGUNDOS_TIMEOUT_SITE = 90
 CACHE_ELENCOS_SITE = "elencos_site.json"   # ao lado deste script
@@ -204,6 +211,7 @@ import re
 import statistics
 import subprocess
 import sys
+import time
 import urllib.request
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -1364,9 +1372,33 @@ _elencos = None
 _erro_base = None   # por que a base nao abriu, para o aviso do main()
 
 
+def arquivo_da_base() -> Path | None:
+    """O arquivo da base do PES: o do caminhos.ini, se existe (quem tem o
+    repositorio do site); senao a copia baixada do GitHub do site."""
+    global _erro_base
+    if BASE_JOGADORES and Path(BASE_JOGADORES).is_file():
+        return Path(BASE_JOGADORES)
+    cache = Path(__file__).with_name(CACHE_BASE_JOGADORES)
+    if not cache.is_file() or time.time() - cache.stat().st_mtime > HORAS_RENOVAR_BASE * 3600:
+        temporario = cache.with_suffix(".part")
+        try:
+            pedido = urllib.request.Request(URL_BASE_JOGADORES, headers={"User-Agent": "Auto_PES21"})
+            with urllib.request.urlopen(pedido, timeout=SEGUNDOS_TIMEOUT_SITE) as resposta:
+                dados = resposta.read()
+            if dados[:2] != b"\x1f\x8b":
+                raise ValueError("o GitHub nao mandou um .gz")
+            temporario.write_bytes(dados)
+            temporario.replace(cache)
+        except (OSError, ValueError) as erro:
+            _erro_base = f"nao consegui baixar a base do GitHub do site ({erro})"
+            if cache.is_file():
+                _erro_base += f"; usei a copia salva em {CACHE_BASE_JOGADORES}"
+    return cache if cache.is_file() else None
+
+
 def elencos():
-    """Chave do time -> nomes dos jogadores, da base do PES. None se nao ha
-    base configurada ou ela nao abre (ai os nomes ficam como lidos).
+    """Chave do time -> nomes dos jogadores, da base do PES. None se a base
+    nao abre nem baixa (ai os nomes ficam como lidos).
 
     Aceita o .json.gz do site e tambem o .json solto: o navegador as vezes
     descompacta o arquivo ao baixar e deixa o nome .gz (aconteceu num PC).
@@ -1374,9 +1406,10 @@ def elencos():
     global _elencos, _erro_base
     if _elencos is None:
         _elencos = {}
-        if BASE_JOGADORES and Path(BASE_JOGADORES).is_file():
+        arquivo = arquivo_da_base()
+        if arquivo is not None:
             try:
-                dados = Path(BASE_JOGADORES).read_bytes()
+                dados = arquivo.read_bytes()
                 if dados[:2] == b"\x1f\x8b":          # assinatura do gzip
                     dados = gzip.decompress(dados)
                 for jogador in json.loads(dados.decode("utf-8-sig")):
@@ -1384,7 +1417,7 @@ def elencos():
                         _elencos.setdefault(chave_base(time), []).append(jogador["n"])
             except (OSError, EOFError, ValueError, KeyError, TypeError) as erro:
                 _elencos = {}
-                _erro_base = f"nao consegui ler {BASE_JOGADORES}: {erro}"
+                _erro_base = f"nao consegui ler {arquivo}: {erro}"
     return _elencos or None
 
 
@@ -1756,10 +1789,8 @@ def main() -> int:
         print(f"ERRO: {erro}")
         return 1
 
-    if elencos() is None:
-        motivo = ((_erro_base or f"nao achei {BASE_JOGADORES}") if BASE_JOGADORES
-                  else "'base_jogadores' vazio no caminhos.ini")
-        print(f"AVISO: base do PES nao lida ({motivo}).")
+    if elencos() is None or _erro_base:
+        print(f"AVISO: base do PES: {_erro_base or 'nao abriu'}.")
     if elencos_do_site() is None or _erro_site:
         print(f"AVISO: elencos atuais do site: {_erro_site or 'url vazia no caminhos.ini'}.")
     print(f"{len(videos)} video(s) para processar.\n")

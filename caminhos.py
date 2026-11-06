@@ -10,9 +10,11 @@ Na primeira vez que qualquer script roda sem caminhos.ini, ele e criado a
 partir de caminhos.exemplo.ini e o script para, pedindo para voce conferir.
 """
 
+import certificados  # noqa: F401  (HTTPS com os certificados do certifi)
 import configparser
 import shutil
 import sys
+import urllib.parse
 from pathlib import Path
 
 PASTA_PROJETO = Path(__file__).resolve().parent
@@ -53,7 +55,20 @@ PASTA_VIDEOS = _pasta("pasta_videos")
 # Opcionais: o enviar_resultados.py usa os dois, e avisa se faltarem; o
 # extrair_eventos.py usa a url para ler os elencos atuais dos times.
 # Um caminhos.ini antigo, sem a secao [site], continua valendo.
-SITE_URL   = _arquivo.get("site", "url", fallback="").strip().strip('"')
+def _endereco_do_site(url: str) -> str:
+    """So o comeco do endereco: 'https://site.com/liga/3' -> 'https://site.com'.
+    A API fica na raiz, e o site devolve a pagina dele (HTML) para qualquer
+    outro caminho. (Igual a endereco_do_site() do painel.py.)"""
+    url = url.strip().strip('"')
+    if not url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    partes = urllib.parse.urlsplit(url)
+    return f"{partes.scheme}://{partes.netloc}" if partes.netloc else url
+
+
+SITE_URL   = _endereco_do_site(_arquivo.get("site", "url", fallback=""))
 SITE_TOKEN = _arquivo.get("site", "token", fallback="").strip().strip('"')
 
 # Opcional: base de jogadores do PES que o site usa (pes-jogadores.json.gz).
