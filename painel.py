@@ -444,6 +444,7 @@ TAREFAS = {
     "youtube_login": {"titulo": "Entrar na conta do canal", "script": "youtube/login.py"},
     "youtube_importar": {"titulo": "Trazer do RPA_Youtube", "script": "youtube/importar_rpa.py"},
     "youtube_atribuir": {"titulo": "Atribuir links no site", "script": "atribuir_videos.py"},
+    "youtube_liberar": {"titulo": "Liberar vídeo para subir de novo", "script": "youtube/upar_videos.py"},
 }
 
 
@@ -575,6 +576,13 @@ def iniciar_tarefa(pedido: dict) -> None:
             argumentos.append("--simular")
         if pedido.get("chave"):
             argumentos += ["--", str(pedido["chave"])]
+    elif nome == "youtube_liberar":
+        # Como tarefa, e nao rota direta: o painel ja recusa se outra tarefa
+        # (um upload ainda rodando) estiver em andamento.
+        arquivo = str(pedido.get("arquivo") or "").strip()
+        if not arquivo:
+            raise ValueError("Faltou o vídeo.")
+        argumentos = ["--liberar", arquivo]
     elif nome == "youtube":
         # As respostas que o upar_videos.py perguntaria no terminal; ele
         # confere tudo de novo (video ainda na pasta, rodada, horario).

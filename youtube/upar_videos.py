@@ -20,6 +20,8 @@ USO:
   O painel (python painel.py, na pasta de cima) usa, sem perguntas:
   python upar_videos.py --listar               -> competicoes e videos em JSON
   python upar_videos.py --plano plano.json     -> respostas num .json
+  python upar_videos.py --liberar "A vs B.mp4" -> tira do historico o video que
+                                                  ficou na pasta (upload falhou)
 
 O QUE ELE FAZ:
   - Lista os videos soltos em config.PASTA_VIDEOS, em ordem de gravacao, e
@@ -300,6 +302,52 @@ def listar_videos(falar: bool = True) -> list[Path]:
     return sorted(videos, key=lambda v: v.stat().st_mtime)
 
 
+def presos_na_pasta() -> list[dict]:
+    """Linhas do historico cujo video continua solto na pasta (mesmo nome e tamanho).
+
+    O video entra no historico no "Programar", antes do upload acabar; se o
+    upload falhou, o arquivo fica na pasta e some da lista para sempre. Estes
+    sao os candidatos a subir de novo (--liberar)."""
+    if not config.HISTORICO.is_file() or not config.PASTA_VIDEOS.is_dir():
+        return []
+    na_pasta = {arq.name: arq.stat().st_size for arq in config.PASTA_VIDEOS.iterdir()
+                if arq.is_file() and arq.suffix.lower() in config.EXTENSOES_VIDEO}
+    with config.HISTORICO.open(encoding="utf-8", newline="") as f:
+        linhas = list(csv.DictReader(f, delimiter=";"))
+    return [linha for linha in linhas
+            if na_pasta.get(linha["arquivo"]) == int(linha["tamanho"])]
+
+
+def liberar(arquivo: str) -> int:
+    """--liberar: tira o video do historico para ele voltar a lista e subir de novo."""
+    video = config.PASTA_VIDEOS / arquivo
+    if Path(arquivo).name != arquivo or not video.is_file():
+        print(f"ERRO: {arquivo} nao esta solto em {config.PASTA_VIDEOS}")
+        return 1
+    tamanho = str(video.stat().st_size)
+    atualizar_cabecalho_historico()
+    with config.HISTORICO.open(encoding="utf-8", newline="") as f:
+        linhas = list(csv.reader(f, delimiter=";"))
+    cabecalho, corpo = linhas[0], linhas[1:]
+    i_arq, i_tam = cabecalho.index("arquivo"), cabecalho.index("tamanho")
+    tirar = [l for l in corpo if len(l) > i_tam and l[i_arq] == arquivo and l[i_tam] == tamanho]
+    if not tirar:
+        print(f"{arquivo} nao esta no historico.csv: ja aparece na lista para subir.")
+        return 0
+    temporario = config.HISTORICO.with_suffix(".tmp")
+    with temporario.open("w", encoding="utf-8", newline="") as f:
+        csv.writer(f, delimiter=";").writerows([cabecalho] + [l for l in corpo if l not in tirar])
+    temporario.replace(config.HISTORICO)
+    i_link = cabecalho.index("link") if "link" in cabecalho else None
+    for l in tirar:
+        link = l[i_link] if i_link is not None and len(l) > i_link else ""
+        print(f"Tirei do historico.csv: {arquivo} (programado em {l[0]}"
+              + (f", link {link}" if link else "") + ")")
+    print("Ele voltou para a lista de videos para subir.")
+    print("Se o video quebrado ainda estiver no YouTube Studio, apague la para nao ficar duplicado.")
+    return 0
+
+
 def ler_descricao(competicao: str) -> str:
     arq = config.COMPETICOES[competicao]["descricao"]
     if not arq.is_file():
@@ -538,6 +586,12 @@ def listar_em_json() -> int:
         "pasta_existe": config.PASTA_VIDEOS.is_dir(),
         "competicoes": competicoes,
         "videos": videos,
+        "presos": [{
+            "arquivo": l["arquivo"],
+            "nome": Path(l["arquivo"]).stem,
+            "programado_em": l["enviado_em"],
+            "link": l.get("link") or "",
+        } for l in presos_na_pasta()],
         "intervalo_padrao": config.MINUTOS_ENTRE_JOGOS,
         "margem_minutos": config.MINUTOS_MARGEM_MINIMA,
         "edicao": config.EDICAO,
@@ -615,10 +669,14 @@ def main() -> int:
     parser.add_argument("--plano", metavar="ARQUIVO.json",
                         help="respostas num .json em vez de perguntar (para o painel); "
                              "ja vale como confirmado")
+    parser.add_argument("--liberar", metavar="ARQUIVO",
+                        help="tira o video (ainda na pasta) do historico.csv para subir de novo")
     args = parser.parse_args()
 
     if args.listar:
         return listar_em_json()
+    if args.liberar:
+        return liberar(args.liberar)
 
     if not config.PASTA_VIDEOS.is_dir():
         print(f"ERRO: nao achei a pasta {config.PASTA_VIDEOS}")

@@ -385,6 +385,14 @@ async function carregarYoutube() {
       criar("span", {}, "Ainda não entrou na conta do canal neste PC. Clique em “Entrar na conta do canal”, faça o login no Chrome que abrir, confira o canal e feche o Chrome."),
     ));
   }
+  // Ja no historico mas ainda soltos na pasta: o upload falhou (ou nao deu
+  // para ver o fim). Nao aparecem na lista ate serem liberados.
+  for (const preso of dados.presos || []) {
+    lista.push(criar("div", { class: "alerta-caixa" },
+      criar("span", {}, `${preso.nome} foi programado em ${preso.programado_em} mas continua na pasta: o upload pode ter falhado. `,
+        preso.link ? criar("a", { href: preso.link, target: "_blank", rel: "noopener" }, "Ver no YouTube") : null),
+      criar("button", { class: "secundario", onclick: () => liberarYoutube(preso) }, "Subir de novo")));
+  }
   alertas.replaceChildren(...lista);
 
   // Logado (ou sem como saber): o botao so abre o Studio, para conferir o canal.
@@ -416,6 +424,12 @@ function importarRpa() {
     : "";
   if (!confirm(`Trazer do RPA_Youtube em ${rpa.pasta}?${aviso}`)) return;
   iniciar("youtube_importar", { pasta: rpa.pasta });
+}
+
+function liberarYoutube(preso) {
+  const link = preso.link ? ` (${preso.link})` : "";
+  if (!confirm(`Liberar ${preso.nome} para subir de novo?\n\nSe o vídeo quebrado${link} ainda estiver no YouTube Studio, apague lá antes, para não ficar duplicado.`)) return;
+  iniciar("youtube_liberar", { arquivo: preso.arquivo });
 }
 
 function competicaoYoutube() {
