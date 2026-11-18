@@ -43,3 +43,6 @@ VERSAO
 MANIFESTO.txt
 dist/
 build/
+
+# Configuracao local do Claude Code.
+.claude/
