@@ -308,14 +308,29 @@ def ler_lista(ocr, telas, separador, avisos, rotulo):
                     nomes[k].append(ln.texto)
         pecas_nota = [escuro_para_branco(faixa(tela, X_NOTA, y_linha(k))) for k in range(n)]
         pecas_selo = [colorido_para_branco(faixa(tela, X_SELO, y_linha(k), 12)) for k in range(n)]
-        lidas = ee.ler_pecas(ocr, pecas_nota + pecas_selo, separador)
+        # Notas e selos em passadas separadas: juntos na mesma grade, o OCR
+        # pulava o "LD" do Rafinha em TODAS as fotos (Flamengo x Corinthians),
+        # e sozinho le "LD" sempre.
+        lidas_nota = ee.ler_pecas(ocr, pecas_nota, separador)
+        lidas_selo = ee.ler_pecas(ocr, pecas_selo, separador)
         for k in range(n):
             if eh_traco(pecas_nota[k]):
                 tracos[k] += 1
-            notas[k] += [ee.ler_nota(t) for t in lidas[k]]
-            selos[k] += [re.sub(r"[^A-Z]", "", t.upper()) or None for t in lidas[n + k]]
+            notas[k] += [ee.ler_nota(t) for t in lidas_nota[k]]
+            selos[k] += [re.sub(r"[^A-Z]", "", t.upper()) or None for t in lidas_selo[k]]
             grupos[k].append(grupo_do_selo(tela, k))
             estrelas[k] += tem_estrela(tela, k)
+
+    # O que a grade nao leu em nenhuma foto: uma peca por vez, em ate 3 fotos.
+    for k in range(n):
+        for tela in telas[:3]:
+            if not any(selos[k]):
+                pecas = [colorido_para_branco(faixa(tela, X_SELO, y_linha(k), 12))]
+                selos[k] += [re.sub(r"[^A-Z]", "", t.upper()) or None
+                             for t in ee.ler_pecas(ocr, pecas, separador)[0]]
+            if tracos[k] <= len(telas) / 2 and not any(v is not None for v in notas[k]):
+                pecas = [escuro_para_branco(faixa(tela, X_NOTA, y_linha(k)))]
+                notas[k] += [ee.ler_nota(t) for t in ee.ler_pecas(ocr, pecas, separador)[0]]
 
     lista = []
     for k in range(n):
