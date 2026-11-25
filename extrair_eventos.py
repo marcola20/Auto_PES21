@@ -1654,6 +1654,48 @@ def conferir_notas(notas: dict, eventos: list, avisos: Avisos):
         avisos.add("sem nota no video (entraram no jogo): " + ", ".join(sem_nota), revisar=False)
 
 
+def estatisticas_dos_jogadores(video, gravado_em, ocr, casa, fora, cab, eventos,
+                               avisos: Avisos):
+    """Os numeros de cada jogador, das fotos do "Registro individual de jogo"
+    (ler_jogadores.py). None se o video nao tem fotos (gravado antes do
+    passo existir, ou o passo falhou).
+
+    Nenhum problema aqui marca o jogo para revisao: placar, gols e cartoes
+    vem do video e sao conferidos a parte; um numero de jogador ilegivel nao
+    deve segurar o resultado.
+    """
+    import ler_jogadores
+    pasta = ler_jogadores.pasta_do_video(video, gravado_em)
+    if pasta is None:
+        return None
+    proprios = Avisos()
+    try:
+        jogadores = ler_jogadores.ler_pasta(pasta, ocr, proprios, casa, fora)
+    except (OSError, ValueError) as erro:
+        avisos.add(f"jogadores: nao consegui ler {pasta.name}: {erro}", revisar=False)
+        return None
+
+    # Conferencia: gols e assistencias de cada time batem com placar e eventos?
+    for lado in ("casa", "fora"):
+        lista = jogadores.get(lado) or []
+        if not lista:
+            continue
+        gols = sum(j.get("gols") or 0 for j in lista)
+        contra_a_favor = sum(1 for e in eventos if e["tipo"] == "gol_contra" and e["lado"] == lado)
+        placar = cab[lado][1]
+        if placar is not None and gols + contra_a_favor != placar:
+            proprios.add(f"jogadores: gols dos jogadores da {lado} somam {gols}, "
+                         f"placar {placar} ({contra_a_favor} gol(s) contra a favor)")
+        assist = sum(j.get("assistencias") or 0 for j in lista)
+        nos_eventos = sum(1 for e in eventos if e["lado"] == lado and e.get("assistencia"))
+        if eventos and assist != nos_eventos:
+            proprios.add(f"jogadores: assistencias da {lado} somam {assist}, "
+                         f"nos eventos {nos_eventos}")
+    for aviso in proprios.lista:
+        avisos.add(aviso, revisar=False)
+    return jogadores
+
+
 def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
     avisos = Avisos()
     # Data do arquivo (renomear nao muda): o site reconhece o mesmo video
@@ -1672,6 +1714,7 @@ def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
         "eventos": [],
         "notas": {"casa": [], "fora": []},
         "estatisticas": None,
+        "jogadores": None,
     }
 
     telas = selecionar_telas(video)
@@ -1713,6 +1756,9 @@ def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
         est = ler_estatisticas(ocr, por_aba["estatisticas"], avisos)
         conferir_estatisticas(est, avisos)
 
+    jogadores = estatisticas_dos_jogadores(video, gravado_em, ocr, casa, fora,
+                                           cab, eventos, avisos)
+
     # A conferencia principal: gols nos eventos x placar.
     if por_aba["eventos"]:
         for lado, gols in (("casa", cab["casa"][1]), ("fora", cab["fora"][1])):
@@ -1729,6 +1775,7 @@ def extrair(video: Path, ocr: OCR, salvar_quadros: bool) -> dict:
         "eventos": eventos,
         "notas": notas,
         "estatisticas": est,
+        "jogadores": jogadores,
         "status": "revisar" if avisos.revisar else "ok",
         "avisos": avisos.lista,
     }

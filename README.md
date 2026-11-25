@@ -217,6 +217,16 @@ troca a lista `JOGOS` por um `.json` no formato
 `[{"casa": "Santos", "fora": "Grêmio", "competicao": "Copa"}]`. Cada jogo vira um vídeo chamado
 `Casa vs Fora.mp4` na `pasta_videos`.
 
+Logo depois de parar a gravação (enquanto a NVIDIA salva o vídeo), e antes do
+próximo jogo, o script entra em **Registro individual de jogo** e
+tira uma foto das estatísticas de cada jogador dos dois times (Baixo desce na
+lista, R1 troca de time, Esc volta). As fotos ficam em
+`pasta_videos/Jogadores/<Casa vs Fora> <data da gravação>/`, com um
+`jogadores.json` dizendo de que partida são. Isso não entra no vídeo. Para
+desligar, ponha `REGISTRAR_JOGADORES = False` no `rodar_jogos.py`. Para
+conferir o passo no jogo sem gravar uma partida, deixe o PES no menu de fim de
+jogo e rode `python teste_registro.py`.
+
 Se parar no meio, o script diz em qual jogo parou e se o vídeo dele foi salvo.
 Tire da lista `JOGOS` os que já foram e rode de novo.
 
@@ -238,6 +248,17 @@ arquivo `pes-jogadores.json.gz` do repositório do site (`Fc25_Draft`). Essa bas
 é uma foto do save: quem mudou de time depois dela vem do elenco atual de cada
 time no site (a `url` da mesma seção; sem internet, vale a última cópia, em
 `elencos_site.json`). Sem nenhum dos dois, os nomes ficam como o OCR leu.
+
+Estatísticas de cada jogador: se o vídeo tem as fotos do Registro individual
+(`pasta_videos/Jogadores/`, tiradas pelo `rodar_jogos.py`), o `.json` ganha o
+campo `"jogadores"`, com `"casa"` e `"fora"`. Cada jogador tem nome, posição,
+grupo (goleiro, defesa, meio ou ataque, pela cor do selo), nota do PES, melhor
+em campo, minutos, gols, assistências, chutes e chutes a gol, passes e passes
+certos, desarmes e desarmes certos, e o resto da tela. O goleiro também tem
+chutes sofridos e defesas. Número ilegível vira `null` com aviso, mas **não**
+põe o jogo em `"revisar"`. Para conferir só as fotos de uma partida:
+`python ler_jogadores.py "pasta das fotos"`. Vídeo sem fotos fica com
+`"jogadores": null`.
 
 Gol contra: o PES escreve só "Gol contra" na linha do tempo, sem dizer quem
 fez. O evento sai como `"tipo": "gol_contra"`, com `"lado"` do time que ganhou
@@ -319,6 +340,7 @@ jogo aberto na tela certa:
 | `python calibrar_painel.py fim` | no painel escuro de fim de jogo |
 | `python calibrar_painel.py replay` | durante um replay, com a caixa de informação na tela |
 | `python calibrar_painel.py formacao` | na tela de formação, já parada |
+| `python calibrar_painel.py registro` | na tela "Registro individual de jogo" |
 
 Os templates de abertura (`templates/abertura_*.png`) são recortes da tela
 de título, aviso, menu e submenu. Se não baterem, `abrir_jogo.py --medir` vai
