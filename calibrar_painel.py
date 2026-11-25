@@ -12,6 +12,7 @@ comando no momento em que aquela tela estiver aberta:
     python calibrar_painel.py fim         (no painel escuro de FIM DE JOGO)
     python calibrar_painel.py replay      (durante um replay, com a caixa de
                                            informacao na tela)
+    python calibrar_painel.py registro    (no "Registro individual de jogo")
     python calibrar_painel.py formacao    (na tela de FORMACAO/escalacao, com
                                            o quadro ja parado de animar)
 
@@ -37,6 +38,7 @@ PAINEIS = {
     # A formacao usa False porque suas letras sao cinza, nao brancas: ali a
     # conferencia e de CONTRASTE, so para nao salvar um retangulo liso.
     "formacao":  ("templates/formacao.png",         visao.REGIAO_FORMACAO,    False),
+    "registro":  ("templates/registro_titulo.png",  visao.REGIAO_TITULO_REGISTRO, True),
 }
 
 ALVO = sys.argv[1].strip().lower() if len(sys.argv) > 1 else ""
@@ -48,6 +50,7 @@ if ALVO not in PAINEIS:
     print("  python calibrar_painel.py replay      (durante um replay)")
     print("  python calibrar_painel.py formacao    (na tela de FORMACAO,")
     print("                                         com o quadro ja parado)")
+    print("  python calibrar_painel.py registro    (no Registro individual de jogo)")
     sys.exit(1)
 
 CAMINHO, REGIAO, TEM_TEXTO_BRANCO = PAINEIS[ALVO]

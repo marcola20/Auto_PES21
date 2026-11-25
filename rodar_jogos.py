@@ -63,6 +63,21 @@ PAUSA_BAIXO_NOS_EVENTOS = 1.0    # entre um Baixo e outro: devagar, para o
                                  # topo e o fim
 SEGUNDOS_MOSTRANDO_EVENTOS = 8   # quanto tempo deixar a aba na tela
 
+# Registro individual de jogo: depois de parar a gravacao, tira uma foto das
+# estatisticas de cada jogador dos dois times (para o site).
+REGISTRAR_JOGADORES = True
+SUBPASTA_JOGADORES = "Jogadores"   # dentro da pasta de videos
+PAUSA_ENTRE_JOGADORES = 1.0      # depois de cada Baixo/Cima. No video os
+                                 # numeros trocam junto com o cursor; 1s
+                                 # sobra para a animacao assentar
+MAX_JOGADORES_POR_TIME = 30      # 11 titulares + reservas; so uma trava
+                                 # contra laco infinito
+TENTATIVAS_LER_REGISTRO = 3      # o ImageGrab as vezes devolve quadro vazio
+CAPTURAS_POR_JOGADOR = 3         # juntadas pelo pixel mais escuro: chuva e
+                                 # reflexo que passam na frente dos numeros
+                                 # mudam de lugar, os numeros nao
+PAUSA_ENTRE_CAPTURAS = 0.25
+
 # ==========================================================================
 
 import json
@@ -87,6 +102,7 @@ TEMPLATE_LIGA      = "templates/liga_fora_brasileirao.png"
 TEMPLATE_LIGA_CASA = "templates/liga_casa_brasileirao.png"
 TEMPLATE_INICIO    = "templates/prejogo_inicio.png"
 TEMPLATE_FORMACAO  = "templates/formacao.png"
+TEMPLATE_REGISTRO  = "templates/registro_titulo.png"
 
 
 # --------------------------------------------------------------------------
@@ -726,17 +742,253 @@ def rolar_notas_dos_jogadores() -> None:
                 f"(semelhanca {parecenca:.3f})")
 
 
-def voltar_para_selecao() -> bool:
+def ler_registro():
+    """Uma foto da tela, so se for mesmo o Registro individual (senao None).
+
+    Insiste algumas vezes: o ImageGrab as vezes devolve um quadro vazio, e a
+    entrada na tela tem uma animacao de ~0.5s.
+    """
+    template = visao.carregar_template(TEMPLATE_REGISTRO)
+    for tentativa in range(TENTATIVAS_LER_REGISTRO):
+        tela = visao.capturar_tela()
+        if visao.eh_registro_individual(tela, template):
+            return tela
+        if tentativa < TENTATIVAS_LER_REGISTRO - 1:
+            time.sleep(0.6)
+    return None
+
+
+def posicao_no_registro(tela) -> tuple:
+    """Onde o cursor esta: (linha selecionada, assinatura da lista).
+
+    A linha sozinha nao basta: nos reservas a lista rola e o cursor fica na
+    ultima linha visivel. A assinatura diz em que trecho da lista estamos.
+    """
+    return (visao.linha_selecionada_no_registro(tela),
+            visao.assinatura_da_lista_do_registro(tela))
+
+
+def mesma_posicao(a: tuple, b: tuple) -> bool:
+    return (a[0] == b[0] and visao.sobreposicao(a[1], b[1])
+            >= visao.LIMIAR_MESMA_LISTA)
+
+
+def subir_ao_topo_do_registro() -> None:
+    """Leva o cursor ao primeiro jogador da lista.
+
+    Usado depois do R1: nao se sabe se o outro time abre no primeiro jogador
+    ou onde o cursor estava. Sobe um de cada vez ate parar. Se a lista der a
+    volta (do primeiro para o ultimo), a linha selecionada DESCE na tela, e
+    um Baixo desfaz.
+    """
+    tela = ler_registro()
+    if tela is None:
+        return
+    atual = posicao_no_registro(tela)
+    for _ in range(MAX_JOGADORES_POR_TIME):
+        teclado.cima()
+        time.sleep(PAUSA_ENTRE_JOGADORES)
+        tela = ler_registro()
+        if tela is None:
+            return
+        nova = posicao_no_registro(tela)
+        if mesma_posicao(nova, atual):
+            return                       # nao andou: e o topo
+        if nova[0] > atual[0]:
+            teclado.baixo()              # deu a volta: desfaz
+            time.sleep(PAUSA_ENTRE_JOGADORES)
+            return
+        atual = nova
+
+
+def foto_sem_sujeira(tela, posicao):
+    """Junta mais capturas do mesmo jogador ficando com o pixel mais escuro.
+
+    Pontinhos brancos de chuva e reflexo passavam na frente dos numeros e o
+    OCR deixava de ler "11 (11)" e "0 (0)". Eles se mexem de um quadro para
+    o outro; o texto fica parado e continua branco em todas. So entra captura
+    que ainda e o Registro com o cursor no MESMO jogador (um quadro vazio do
+    ImageGrab deixaria tudo preto).
+    """
+    from PIL import ImageChops
+    for _ in range(CAPTURAS_POR_JOGADOR - 1):
+        time.sleep(PAUSA_ENTRE_CAPTURAS)
+        outra = ler_registro()
+        if outra is not None and mesma_posicao(posicao_no_registro(outra), posicao):
+            tela = ImageChops.darker(tela, outra)
+    return tela
+
+
+def fotografar_time(pasta: Path, numero_time: int) -> list:
+    """Desce a lista do time atual tirando uma foto de cada jogador.
+
+    Para quando o Baixo nao leva a um jogador novo: ou a lista acabou (o
+    cursor nao andou), ou deu a volta para o primeiro. Devolve os nomes dos
+    arquivos salvos.
+    """
+    fotos = []
+    vistas = []
+    for n in range(1, MAX_JOGADORES_POR_TIME + 1):
+        tela = ler_registro()
+        if tela is None:
+            falhar_com_foto(f"AVISO - perdi a tela do Registro no jogador {n} "
+                            f"do time {numero_time}", "registro_perdido")
+            break
+        posicao = posicao_no_registro(tela)
+        if any(mesma_posicao(posicao, vista) for vista in vistas):
+            break
+        vistas.append(posicao)
+        nome = f"time{numero_time}_{n:02d}.png"
+        foto_sem_sujeira(tela, posicao).crop(visao.REGIAO_PAINEIS_REGISTRO).save(pasta / nome)
+        fotos.append(nome)
+        teclado.baixo()
+        time.sleep(PAUSA_ENTRE_JOGADORES)
+    return fotos
+
+
+def pasta_dos_jogadores(video: Path) -> Path:
+    """Pasta das fotos de uma partida: Jogadores/<video> <data da gravacao>.
+
+    O nome do video sozinho se repete (o mesmo confronto na Serie A e na
+    Copa); a data do arquivo e a mesma chave do gravacoes.json, e nao muda
+    quando o video e movido para Enviados/.
+    """
+    gravado = datetime.fromtimestamp(video.stat().st_mtime)
+    nome = f"{video.stem} {gravado.strftime('%Y-%m-%d %H.%M.%S')}"
+    return Path(PASTA_GRAVACOES) / SUBPASTA_JOGADORES / nome
+
+
+def pasta_temporaria_dos_jogadores(casa: str, fora: str) -> Path:
+    """Onde as fotos ficam enquanto o video ainda nao foi salvo.
+
+    O Registro roda logo depois de parar a gravacao, antes de a NVIDIA terminar
+    de salvar o arquivo (um video de 2.4 GB deixava o jogo ~20s parado no menu,
+    e parecia travado). O nome definitivo da pasta depende do video - nome e
+    data - entao ela ganha o nome certo depois (dar_nome_a_pasta_dos_jogadores).
+    """
+    agora = datetime.now().strftime("%Y-%m-%d %H.%M.%S")
+    return (Path(PASTA_GRAVACOES) / SUBPASTA_JOGADORES
+            / f"_em andamento {times.nome_oficial(casa)} vs {times.nome_oficial(fora)} {agora}")
+
+
+def dar_nome_a_pasta_dos_jogadores(temporaria: Path, video: Path) -> None:
+    """Renomeia a pasta das fotos para o nome do video salvo e completa o
+    jogadores.json com o video e a data dele. NUNCA levanta erro: as fotos
+    ficam na pasta temporaria, e o aviso diz onde."""
+    if not temporaria.is_dir():
+        return
+    resumo = temporaria / "jogadores.json"
+    if not resumo.exists():
+        # O Registro nao abriu: nenhuma foto. Nao deixa pasta vazia para tras.
+        try:
+            temporaria.rmdir()
+        except OSError:
+            pass
+        return
+    try:
+        dados = json.loads(resumo.read_text(encoding="utf-8"))
+        dados.update({
+            "video": video.name,
+            "gravado_em": datetime.fromtimestamp(video.stat().st_mtime)
+                                  .isoformat(timespec="seconds"),
+        })
+        resumo.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+        destino = pasta_dos_jogadores(video)
+        numero = 2
+        while destino.exists():
+            destino = destino.with_name(f"{pasta_dos_jogadores(video).name} ({numero})")
+            numero += 1
+        temporaria.rename(destino)
+        detalhe(f"fotos dos jogadores em: {destino}")
+    except (OSError, ValueError) as erro:
+        detalhe(f"AVISO - as fotos ficaram em {temporaria} ({erro})")
+
+
+def registrar_jogadores(pasta: Path, sobre_a_partida: dict) -> bool:
+    """Passa por cada jogador dos dois times no "Registro individual de jogo".
+
+    Roda DEPOIS de parar a gravacao: o video do YouTube nao muda. Salva em
+    `pasta` uma foto por jogador e um jogadores.json com `sobre_a_partida`
+    mais a lista das fotos; quem le os numeros e o extrator, depois.
+
+    Nada aqui derruba a partida: o video ja esta salvo. Devolve False so se
+    a tela ficar presa no Registro (ai a volta para a selecao nao funcionaria);
+    em qualquer outro caso o cursor termina no botao "Registro individual"
+    do menu de fim de jogo.
+    """
+    print("  [7] Registro individual de jogo")
+    try:
+        pasta.mkdir(parents=True, exist_ok=True)
+    except OSError as erro:
+        detalhe(f"AVISO - nao consegui criar a pasta das fotos: {erro}")
+        teclado.esquerda()   # deixa o cursor onde a volta espera
+        time.sleep(0.4)
+        return True
+
+    # "Jogar novamente" vem marcado; o Registro e o botao a esquerda.
+    teclado.esquerda()
+    time.sleep(0.4)
+    teclado.confirmar()
+    time.sleep(SEGUNDOS_APOS_CONFIRMAR)
+    if ler_registro() is None:
+        falhar_com_foto("AVISO - o Registro individual nao abriu, "
+                        "seguindo sem as fotos", "registro_nao_abriu")
+        return True
+
+    times_salvos = []
+    for numero_time in (1, 2):
+        if numero_time == 2:
+            antes = visao.nome_do_time_no_registro(ler_registro() or
+                                                   visao.capturar_tela())
+            teclado.apertar(teclado.TECLA_R1)
+            time.sleep(SEGUNDOS_APOS_CONFIRMAR)
+            tela = ler_registro()
+            depois = visao.nome_do_time_no_registro(tela) if tela else []
+            if (not depois or not visao.tem_texto(depois)
+                    or visao.sobreposicao(antes, depois) >= visao.LIMIAR_NOME_TIME):
+                falhar_com_foto("AVISO - o R1 nao trocou de time, "
+                                "fiquei so com o primeiro", "registro_sem_r1")
+                break
+            subir_ao_topo_do_registro()
+        fotos = fotografar_time(pasta, numero_time)
+        detalhe(f"time {numero_time}: {len(fotos)} jogadores fotografados")
+        times_salvos.append({"numero": numero_time, "fotos": fotos})
+
+    try:
+        (pasta / "jogadores.json").write_text(json.dumps(
+            {**sobre_a_partida, "times": times_salvos},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+        detalhe(f"fotos em: {pasta}")
+    except OSError as erro:
+        detalhe(f"(nao consegui gravar o jogadores.json: {erro})")
+
+    # Esc volta ao menu de fim de jogo com "Registro individual" marcado.
+    # Um segundo Esc so se a tela AINDA for o Registro: no menu, um Esc a
+    # mais poderia abrir outra coisa.
+    for _ in range(2):
+        teclado.voltar()
+        time.sleep(SEGUNDOS_APOS_CONFIRMAR)
+        if ler_registro() is None:
+            return True
+    falhar_com_foto("FALHOU - nao consegui sair do Registro individual",
+                    "registro_preso")
+    return False
+
+
+def voltar_para_selecao(direitas: int = 1) -> bool:
     """Do menu de fim de jogo, volta para a lista de times do painel casa.
 
-    O menu de fim de jogo abre com "Jogar novamente" marcado. Uma Direita leva a
-    "Selecionar time", que cai direto na selecao - sem passar pelo menu
-    principal. De la, dois "Voltar" sobem ate a lista de times da casa:
+    O menu de fim de jogo abre com "Jogar novamente" marcado: uma Direita leva
+    a "Selecionar time". Depois do Registro individual o cursor volta no
+    botao do Registro, e ai sao duas. "Selecionar time" cai direto na selecao
+    - sem passar pelo menu principal. De la, dois "Voltar" sobem ate a lista
+    de times da casa:
         lista de times FORA  ->  lista de ligas FORA  ->  lista de times CASA
     """
-    print("  [7] Voltando para a selecao de times")
-    teclado.direita()
-    time.sleep(0.4)
+    print("  [9] Voltando para a selecao de times")
+    for _ in range(direitas):
+        teclado.direita()
+        time.sleep(0.4)
     teclado.confirmar()
     time.sleep(SEGUNDOS_APOS_CONFIRMAR * 2)
 
@@ -788,9 +1040,23 @@ def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
     print("  [6] Parando gravacao")
     teclado.alternar_gravacao()
 
+    # Registro individual logo em seguida, enquanto a NVIDIA salva o video:
+    # ele nao precisa do arquivo. Inclusive no ultimo jogo: os numeros dele
+    # tambem vao para o site.
+    direitas = 1
+    fotos = None
+    preso = False
+    if REGISTRAR_JOGADORES:
+        fotos = pasta_temporaria_dos_jogadores(casa, fora)
+        preso = not registrar_jogadores(fotos, {"casa": casa, "fora": fora})
+        direitas = 2   # o cursor voltou no botao do Registro
+
+    print("  [8] Conferindo o video salvo")
     novo = esperar_video_novo(pasta, antes)
     if novo is None:
         detalhe("FALHOU - nenhum video novo apareceu na pasta.")
+        if fotos is not None and fotos.is_dir():
+            detalhe(f"(as fotos dos jogadores ficaram em {fotos})")
         return False, False
 
     esperar_arquivo_estabilizar(novo)
@@ -802,9 +1068,13 @@ def rodar_um_jogo(casa: str, fora: str, indice: int, total: int,
     if renomeado is not None:
         detalhe(f"Renomeado para: {renomeado.name}")
     anotar_gravacao(renomeado or novo, competicao)
+    if fotos is not None:
+        dar_nome_a_pasta_dos_jogadores(fotos, renomeado or novo)
+    if preso:
+        return False, True
 
     # No ultimo jogo nao ha proximo, entao nao precisa voltar para a selecao.
-    if indice < total and not voltar_para_selecao():
+    if indice < total and not voltar_para_selecao(direitas):
         return False, True
     return True, True
 

@@ -368,3 +368,87 @@ def posicao_do_controle(tela: Image.Image):
     achadas = [nome for nome, regiao in POSICOES_CONTROLE.items()
                if pixels_ciano(tela.crop(regiao)) >= MINIMO_CIANO]
     return achadas[0] if len(achadas) == 1 else None
+
+
+# ---------------------------------------------------------------------------
+# Tela "Registro individual de jogo" (estatisticas de cada jogador)
+# ---------------------------------------------------------------------------
+# Medidas num video 1080p do usuario (2026-11-25, Coritiba). A tela tem dois
+# paineis: a lista do time na esquerda (11 linhas visiveis, o selecionado com
+# o NOME em ciano) e os numeros do jogador na direita.
+
+REGIAO_TITULO_REGISTRO = (700, 62, 1290, 122)    # "Registro individual de jogo"
+REGIAO_TIME_REGISTRO = (128, 62, 460, 122)       # nome do time, ex. "Coritiba"
+REGIAO_PAINEIS_REGISTRO = (105, 47, 1815, 935)   # o que vai para a foto
+
+# Linhas da lista: centro da primeira em y=197, uma a cada 42 px. So a coluna
+# do NOME conta: a estrela do melhor em campo, na coluna da nota, e ciano o
+# tempo todo, e confundia qual linha estava selecionada.
+# A lista NAO rola: quem entrou aparece em linhas a mais, embaixo (teste ao
+# vivo de 2026-11-25: 14 linhas com 3 trocas). A primeira versao olhava so
+# 11 linhas e dava a tela por perdida no 12o jogador. 16 = 11 titulares + 5
+# trocas; abaixo da lista e estadio, sem nome ciano para confundir.
+REGISTRO_Y_PRIMEIRA_LINHA = 197
+REGISTRO_PASSO_LINHA = 42
+REGISTRO_LINHAS = 16
+REGISTRO_LINHAS_SEMPRE_PRESENTES = 11   # os titulares: a lista tem pelo menos isso
+REGISTRO_COLUNA_NOME = (215, 540)
+# Nome selecionado deu 227 a 712 pixels ciano no video; as outras linhas, 0.
+MINIMO_CIANO_LINHA = 100
+
+# Titulo: 0.97 a 1.00 dentro da tela, 0.07 a 0.21 na transicao para ela.
+LIMIAR_TITULO_REGISTRO = 0.75
+# Assinatura da lista: o MESMO trecho da lista deu 0.93 ou mais em todo o
+# video, com o estadio mudando atras e o cursor andando. Nomes diferentes
+# (lista rolada, outro time) ficam bem abaixo.
+LIMIAR_MESMA_LISTA = 0.85
+
+
+def _ciano_forte(r, g, b) -> bool:
+    return g > 140 and b > 120 and r < 90
+
+
+def eh_registro_individual(tela: Image.Image, template: Image.Image) -> bool:
+    """True se a tela "Registro individual de jogo" esta aparecendo.
+
+    Pede o titulo E uma linha selecionada na lista: so o titulo poderia passar
+    durante a animacao de entrada, com a lista ainda vazia.
+    """
+    titulo = mascara_texto_branco(tela.crop(REGIAO_TITULO_REGISTRO))
+    modelo = mascara_texto_branco(template)
+    return (sobreposicao(titulo, modelo) >= LIMIAR_TITULO_REGISTRO
+            and linha_selecionada_no_registro(tela) is not None)
+
+
+def linha_selecionada_no_registro(tela: Image.Image):
+    """Qual das 11 linhas visiveis esta selecionada (0 = a de cima), ou None."""
+    x1, x2 = REGISTRO_COLUNA_NOME
+    contagens = []
+    for k in range(REGISTRO_LINHAS):
+        meio = REGISTRO_Y_PRIMEIRA_LINHA + REGISTRO_PASSO_LINHA * k
+        faixa = tela.crop((x1, meio - 15, x2, meio + 15)).convert("RGB")
+        contagens.append(sum(1 for p in faixa.get_flattened_data()
+                             if _ciano_forte(*p)))
+    melhor = max(range(REGISTRO_LINHAS), key=lambda k: contagens[k])
+    return melhor if contagens[melhor] >= MINIMO_CIANO_LINHA else None
+
+
+def assinatura_da_lista_do_registro(tela: Image.Image) -> list:
+    """O formato dos nomes da lista, sem depender de qual esta selecionado.
+
+    Marca o texto escuro E o ciano (os dois tem pouco vermelho; o fundo da
+    lista e claro). Assim mover o cursor nao muda a assinatura, mas trocar de
+    time muda. So os titulares: abaixo deles pode ser estadio, que muda com a
+    camera e faria a mesma posicao parecer outra.
+    """
+    x1, x2 = REGISTRO_COLUNA_NOME
+    y1 = REGISTRO_Y_PRIMEIRA_LINHA - 15
+    y2 = (REGISTRO_Y_PRIMEIRA_LINHA + 15 + REGISTRO_PASSO_LINHA
+          * (REGISTRO_LINHAS_SEMPRE_PRESENTES - 1))
+    return [r < 120 for r, g, b in
+            tela.crop((x1, y1, x2, y2)).convert("RGB").get_flattened_data()]
+
+
+def nome_do_time_no_registro(tela: Image.Image) -> list:
+    """Mascara do nome do time no alto da lista: muda quando o R1 troca o time."""
+    return mascara_texto_branco(tela.crop(REGIAO_TIME_REGISTRO))

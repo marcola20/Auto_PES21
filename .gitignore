@@ -46,3 +46,6 @@ build/
 
 # Configuracao local do Claude Code.
 .claude/
+
+# Fotos do teste_registro.py (diagnostico local).
+teste_registro_fotos/
