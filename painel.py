@@ -52,6 +52,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -389,6 +390,24 @@ def fila_para_pagina() -> list:
             for j in ler_fila()]
 
 
+def situacao_dos_jogadores(pasta: Path, dados: dict):
+    """Se o .json saiu sem as estatisticas de algum time, por que: None
+    (tem os dois times, ou o jogo nao tem pasta de fotos), "sem_fotos" (a
+    pasta existe mas os .png nao chegaram) ou "reler" (as fotos estao la:
+    o botao "Ler jogadores" resolve). A pasta e Jogadores/<video> <data>,
+    como no ler_jogadores.pasta_do_video (importar o extrator aqui pesaria)."""
+    jogadores = dados.get("jogadores") or {}
+    if jogadores.get("casa") and jogadores.get("fora"):
+        return None
+    try:
+        data = datetime.fromisoformat(dados["gravado_em"]).strftime("%Y-%m-%d %H.%M.%S")
+        fotos = next(p for p in (pasta / "Jogadores").iterdir()
+                     if p.is_dir() and p.name.endswith(data))
+    except (KeyError, TypeError, ValueError, OSError, StopIteration):
+        return None
+    return "reler" if any(fotos.glob("time*.png")) else "sem_fotos"
+
+
 def situacao_dos_videos() -> dict:
     """Cada jogo da raiz da pasta de videos e em que passo ele esta."""
     pasta = expandir(valor_ini(ler_ini(), "caminhos", "pasta_videos"))
@@ -419,6 +438,7 @@ def situacao_dos_videos() -> dict:
             info["status"] = dados.get("status")
             info["placar"] = f"{c.get('time')} {c.get('gols')} x {f.get('gols')} {f.get('time')}"
             info["avisos"] = dados.get("avisos") or []
+            info["jogadores"] = situacao_dos_jogadores(pasta, dados)
         except (OSError, ValueError) as erro:
             info["status"] = "ilegivel"
             info["avisos"] = [f"nao consegui ler o .json: {erro}"]
@@ -439,6 +459,7 @@ def situacao_dos_videos() -> dict:
 TAREFAS = {
     "rodar":   {"titulo": "Rodar jogos", "script": "rodar_jogos.py"},
     "extrair": {"titulo": "Extrair eventos", "script": "extrair_eventos.py"},
+    "jogadores": {"titulo": "Ler jogadores", "script": "extrair_eventos.py"},
     "enviar":  {"titulo": "Enviar resultados", "script": "enviar_resultados.py"},
     "youtube": {"titulo": "Subir no YouTube", "script": "youtube/upar_videos.py"},
     "youtube_login": {"titulo": "Entrar na conta do canal", "script": "youtube/login.py"},
@@ -564,6 +585,11 @@ def iniciar_tarefa(pedido: dict) -> None:
         if not fila:
             raise ValueError("A fila de jogos esta vazia.")
         argumentos = ["--auto", "--fila", ARQUIVO_FILA]
+    elif nome == "jogadores":
+        arquivo = Path(str(pedido.get("arquivo") or "")).name
+        if not arquivo.lower().endswith(".json"):
+            raise ValueError("Faltou o .json do jogo.")
+        argumentos = ["--jogadores", arquivo]
     elif nome == "enviar" and pedido.get("simular"):
         argumentos = ["--simular"]
     elif nome == "youtube_importar" and pedido.get("pasta"):

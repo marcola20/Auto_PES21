@@ -260,6 +260,14 @@ põe o jogo em `"revisar"`. Para conferir só as fotos de uma partida:
 `python ler_jogadores.py "pasta das fotos"`. Vídeo sem fotos fica com
 `"jogadores": null`.
 
+Se o `.json` saiu sem os jogadores de um time (as fotos chegaram na pasta
+depois da extração, por exemplo vindas de outro PC), a aba **Vídeos** do painel
+mostra o botão **Ler jogadores** na linha do jogo. Ele lê de novo só as fotos e
+troca só o campo `"jogadores"`. Placar, eventos e correções feitas à mão ficam
+como estão. Pelo terminal: `python extrair_eventos.py --jogadores "Casa vs
+Fora.json"`. Se o jogo já tinha sido enviado, ele aparece como "mudou —
+reenviar".
+
 Gol contra: o PES escreve só "Gol contra" na linha do tempo, sem dizer quem
 fez. O evento sai como `"tipo": "gol_contra"`, com `"lado"` do time que ganhou
 o gol e `"jogador": null`, e o `.json` fica em `"revisar"`: ponha o nome do

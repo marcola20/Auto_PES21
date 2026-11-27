@@ -38,6 +38,9 @@ Uso:
   python extrair_eventos.py                 -> todo video que ainda nao tem .json
   python extrair_eventos.py "arquivo.mp4"   -> so esse (sobrescreve)
   python extrair_eventos.py --forcar        -> refaz todos
+  python extrair_eventos.py --jogadores "jogo.json"
+                                            -> so le de novo as fotos dos jogadores
+                                               (o resto do .json fica como esta)
   python extrair_eventos.py "arquivo.mp4" --salvar-quadros
                                             -> tambem grava as telas usadas em
                                                diagnostico_eventos/
@@ -206,6 +209,7 @@ import argparse
 import asyncio
 import gzip
 import json
+import os
 import unicodedata
 import re
 import statistics
@@ -1833,17 +1837,108 @@ def achar_video(arg: str) -> Path:
     return candidatos[0]
 
 
+def tem_jogadores(dados: dict) -> bool:
+    """O .json ja tem as estatisticas dos dois times?"""
+    jogadores = dados.get("jogadores") or {}
+    return bool(jogadores.get("casa")) and bool(jogadores.get("fora"))
+
+
+def fotos_dos_jogadores(dados: dict):
+    """A pasta das fotos do Registro individual deste jogo e quantas fotos
+    tem nela; (None, 0) se o jogo nao tem pasta."""
+    import ler_jogadores
+    if not dados.get("gravado_em"):
+        return None, 0
+    pasta = ler_jogadores.pasta_do_video(None, dados["gravado_em"])
+    if pasta is None:
+        return None, 0
+    return pasta, sum(1 for _ in pasta.glob("time*.png"))
+
+
+def reler_jogadores(arquivo: str) -> int:
+    """Le de novo SO as fotos dos jogadores e troca o campo "jogadores" do
+    .json, sem tocar no resto: placar, eventos e correcoes feitas a mao (o
+    autor de um gol contra) continuam como estao, e o video nem e aberto.
+
+    Para quando o .json saiu sem os jogadores: as fotos chegaram depois (o
+    Vasco x Santos veio de outro PC pelo Google Drive, os .png por ultimo) ou
+    a leitura mudou. So o .json da RAIZ da pasta de videos, que e o que o
+    enviar_resultados le (ver o achar_video: procurar pelo nome nas subpastas
+    ja regravou .json enviado)."""
+    caminho = Path(arquivo)
+    if not caminho.is_file():
+        caminho = Path(PASTA_VIDEOS) / caminho.name
+    if caminho.suffix.lower() != ".json" or not caminho.is_file():
+        print(f"ERRO: nao achei o .json '{arquivo}' na pasta {PASTA_VIDEOS}")
+        return 1
+    try:
+        dados = json.loads(caminho.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as erro:
+        print(f"ERRO: nao consegui ler {caminho.name}: {erro}")
+        return 1
+
+    print(f"- {caminho.name}")
+    pasta, fotos = fotos_dos_jogadores(dados)
+    if pasta is None:
+        print(f"    ERRO: nao achei a pasta das fotos (Jogadores/... {dados.get('gravado_em')}).")
+        return 1
+    if not fotos:
+        print(f"    ERRO: a pasta {pasta.name} ainda nao tem as fotos (time1_01.png...).\n"
+              "    Se o jogo rodou em outro PC, copie os .png de la e tente de novo.")
+        return 1
+    print(f"    {fotos} foto(s) em {pasta.name}")
+
+    try:
+        ocr = OCR()
+    except RuntimeError as erro:
+        print(f"ERRO: {erro}")
+        return 1
+    casa = (dados.get("casa") or {}).get("time")
+    fora = (dados.get("fora") or {}).get("time")
+    cab = {"casa": (casa, (dados.get("casa") or {}).get("gols")),
+           "fora": (fora, (dados.get("fora") or {}).get("gols"))}
+    avisos = Avisos()
+    jogadores = estatisticas_dos_jogadores(None, dados["gravado_em"], ocr, casa, fora, cab,
+                                           dados.get("eventos") or [], avisos)
+    if jogadores is None:
+        print("    ERRO: nao consegui ler as fotos.")
+        return 1
+
+    # Os avisos "jogadores: ..." da leitura anterior saem; os outros ficam.
+    # Aviso de jogador nunca marca "revisar", entao o status nao muda.
+    dados["jogadores"] = jogadores
+    dados["avisos"] = ([a for a in dados.get("avisos") or [] if not a.startswith("jogadores:")]
+                       + avisos.lista)
+    temporario = caminho.with_suffix(".json.tmp")
+    temporario.write_text(json.dumps(dados, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporario, caminho)
+    print(f"    {casa}: {len(jogadores.get('casa') or [])} jogador(es)  |  "
+          f"{fora}: {len(jogadores.get('fora') or [])} jogador(es)")
+    for aviso in avisos.lista:
+        print(f"      aviso: {aviso}")
+    if not tem_jogadores(dados):
+        print("\nFim: ainda falta um dos times (veja os avisos).")
+        return 1
+    print("\nFim: jogadores lidos. Se o jogo ja foi enviado, envie de novo para o site receber.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extrai o resultado do final dos videos.")
     parser.add_argument("arquivo", nargs="?", help="um video so (sobrescreve o .json)")
     parser.add_argument("--forcar", action="store_true", help="refaz todos os videos")
     parser.add_argument("--salvar-quadros", action="store_true",
                         help=f"grava as telas usadas em {PASTA_DIAGNOSTICO}/")
+    parser.add_argument("--jogadores", metavar="JSON",
+                        help="so le de novo as fotos dos jogadores desse .json (o resto fica)")
     args = parser.parse_args()
 
     # O terminal do Windows as vezes nao e UTF-8; sem isto um nome com
     # acento ou a barra U+FF5C derrubaria o print.
     sys.stdout.reconfigure(errors="replace")
+
+    if args.jogadores:
+        return reler_jogadores(args.jogadores)
 
     if args.arquivo:
         try:

@@ -337,9 +337,25 @@ async function carregarVideos() {
       criar("td", {}, criar("div", {}, jogo.nome), criar("div", { class: "arquivos" }, arquivos)),
       criar("td", {}, j?.placar || "—",
         j?.avisos?.length ? criar("ul", { class: "avisos" }, j.avisos.map((a) => criar("li", {}, a))) : null),
-      criar("td", {}, criar("span", { class: `selo ${classe}` }, texto)),
+      criar("td", {}, criar("span", { class: `selo ${classe}` }, texto), jogadoresDoJogo(j)),
     ));
   }
+  atualizarBotoesAcao();
+}
+
+// O .json saiu sem as estatisticas de um time (as fotos chegaram depois, a
+// leitura falhou): le de novo so as fotos, sem mexer no resto do .json.
+function jogadoresDoJogo(j) {
+  if (j?.jogadores === "sem_fotos") {
+    return criar("div", { class: "jogadores-nota" }, "faltam as fotos dos jogadores na pasta Jogadores");
+  }
+  if (j?.jogadores !== "reler") return null;
+  return criar("div", { class: "jogadores-nota" },
+    criar("button", {
+      class: "secundario ler-jogadores",
+      title: "Lê de novo só as fotos do Registro individual. Placar, eventos e correções feitas à mão ficam como estão.",
+      onclick: () => iniciar("jogadores", { arquivo: j.arquivo }),
+    }, "Ler jogadores"));
 }
 
 $("#recarregar-videos").addEventListener("click", carregarVideos);
@@ -857,7 +873,7 @@ function atualizarBotoesAcao() {
   $("#yt-simular").disabled = rodando;
   $("#yt-login").disabled = rodando;
   $("#yt-links-todos").disabled = rodando;
-  document.querySelectorAll(".yt-atribuir").forEach((b) => { b.disabled = rodando; });
+  document.querySelectorAll(".yt-atribuir, .ler-jogadores").forEach((b) => { b.disabled = rodando; });
   $("#yt-subir").disabled = rodando || (estado.yt ? montarPlanoYoutube().problemas.length > 0 : true);
   $("#acao-parar").classList.toggle("escondido", !rodando);
 }
