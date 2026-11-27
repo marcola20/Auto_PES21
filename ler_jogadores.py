@@ -74,6 +74,12 @@ FOLGA_LINHA_DE_BASE = 4
 # Estrela do melhor em campo: disco ciano, ~400 pixels em 1080p.
 PIXELS_MINIMOS_ESTRELA = 150
 
+# Selo de posicao: letras coloridas sobre fundo ESCURO. Medido (Vasco x
+# Santos): 886+ dos 1240 pixels do recorte do selo sao escuros numa linha de
+# verdade; a placa clara do estadio logo abaixo da lista (fundo claro, como
+# uma linha) tem 0 a 463 e virava 2 jogadores fantasmas sem nome.
+FRACAO_MINIMA_ESCURO_SELO = 0.6
+
 # Cor do selo de posicao -> grupo. Medido: goleiro (240,200,0), defesa
 # (40,200,240), meio (80,200,40), ataque (240,40,80).
 GRUPOS = {"goleiro": (240, 200, 0), "defesa": (40, 200, 240),
@@ -128,19 +134,26 @@ def colorido_para_branco(img: Image.Image) -> Image.Image:
 
 
 def linhas_da_lista(tela) -> int:
-    """Quantas linhas a lista tem: o fundo claro da lista vai ate o fim dela."""
+    """Quantas linhas a lista tem: o fundo claro da lista vai ate o fim dela,
+    e toda linha tem o selo da posicao (o estadio abaixo pode ser claro)."""
     n = 0
     for k in range(MAX_LINHAS):
         amostra = tela.crop((450, y_linha(k) - 10, 540, y_linha(k) + 10)).convert("L")
         claros = sum(1 for v in amostra.get_flattened_data() if v > 170)
-        if claros < 0.5 * amostra.width * amostra.height:
+        if claros < 0.5 * amostra.width * amostra.height or not tem_selo(tela, k):
             break
         n += 1
     return n
 
 
+def tem_selo(tela, k) -> bool:
+    selo = list(faixa(tela, X_SELO, y_linha(k), 10).convert("RGB").get_flattened_data())
+    escuros = sum(1 for p in selo if max(p) < 70)
+    cores = sum(1 for p in selo if max(p) > 120 and max(p) - min(p) > 60)
+    return escuros >= FRACAO_MINIMA_ESCURO_SELO * len(selo) and cores >= 30
+
+
 def grupo_do_selo(tela, k):
-    from collections import Counter
     selo = faixa(tela, X_SELO, y_linha(k), 10).convert("RGB")
     cores = [p for p in selo.get_flattened_data() if max(p) > 120 and max(p) - min(p) > 60]
     if len(cores) < 30:
