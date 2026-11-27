@@ -720,13 +720,9 @@ CAMPOS_ESTATISTICAS = ["posse", "chutes", "chutes_a_gol", "faltas", "impedimento
                        "cruzamentos", "interceptacoes", "desarmes", "defesas"]
 
 
-def metades_do_par(peca: Image.Image):
-    """'0 (0)' -> recortes '0' e '(0)', cortando no maior vao entre colunas
-    com texto (o espaco antes do parentese). O OCR do Windows descarta o
-    "0 (0)" inteiro mesmo na grade, mas le as duas metades."""
-    img = justo(peca)
-    if img is None:
-        return None
+def vaos_entre_colunas(img: Image.Image) -> list:
+    """(largura, x inicial, x final) de cada faixa de colunas sem texto entre
+    colunas com texto, num recorte ja justo."""
     bw = binarizar(img).load()
     com_texto = [any(bw[x, y] == 0 for y in range(img.height)) for x in range(img.width)]
     vaos, inicio = [], None
@@ -736,11 +732,35 @@ def metades_do_par(peca: Image.Image):
         elif tem and inicio is not None:
             vaos.append((x - inicio, inicio, x))
             inicio = None
-    vaos = [v for v in vaos if v[1] > 0]       # margem da esquerda nao e vao
+    return [v for v in vaos if v[1] > 0]       # margem da esquerda nao e vao
+
+
+def metades_do_par(peca: Image.Image):
+    """'0 (0)' -> recortes '0' e '(0)', cortando no maior vao entre colunas
+    com texto (o espaco antes do parentese). O OCR do Windows descarta o
+    "0 (0)" inteiro mesmo na grade, mas le as duas metades."""
+    img = justo(peca)
+    if img is None:
+        return None
+    vaos = vaos_entre_colunas(img)
     if not vaos:
         return None
     _, x0, x1 = max(vaos)
     return img.crop((0, 0, x0, img.height)), img.crop((x1, 0, img.width, img.height))
+
+
+def sem_porcento(peca: Image.Image):
+    """'50%' -> recorte so com '50' (corta no ultimo vao, antes do "%").
+    O OCR do Windows pulou o "50%" inteiro nas tres alturas da grade (Vasco
+    x Santos, 2026-11-27), e leu "50" sem o sinal todas as vezes."""
+    img = justo(peca)
+    if img is None:
+        return None
+    vaos = vaos_entre_colunas(img)
+    if not vaos:
+        return None
+    _, x0, _ = max(vaos, key=lambda v: v[1])
+    return img.crop((0, 0, x0, img.height))
 
 
 def ler_estatisticas(ocr, telas, avisos: Avisos):
@@ -773,6 +793,10 @@ def ler_estatisticas(ocr, telas, avisos: Avisos):
                         if metades:
                             esq, dir_ = ler_pecas(ocr, list(metades), separador)
                             textos = [f"{a} {b}" for a, b in zip(esq, dir_)]
+                    if campo == "posse" and not any(ler_posse(t) is not None for t in textos):
+                        digitos = sem_porcento(pecas[2 * i + j])
+                        if digitos:
+                            textos = ler_pecas(ocr, [digitos], separador)[0]
                     for texto in textos:
                         if campo in PARES_ESTATISTICAS:
                             par = ler_par(texto)
@@ -1488,9 +1512,12 @@ def elenco_do_time(time):
     chaves_base = [chave_base(n) for n in base or []]
 
     def na_base(nome):
+        # "Um dentro do outro" palavra por palavra, nao letra por letra:
+        # "fred" esta dentro de "fredyguarin", mas Fred e Fredy Guarin sao
+        # dois jogadores do Vasco (o Guarin sumia do elenco).
         k = chave_base(nome)
-        return any(k in c or c in k or SequenceMatcher(None, k, c).ratio() >= SEMELHANCA_MESMO_JOGADOR
-                   for c in chaves_base)
+        return any(SequenceMatcher(None, k, c).ratio() >= SEMELHANCA_MESMO_JOGADOR
+                   for c in chaves_base) or any(nome_contido(nome, [n]) for n in base or [])
 
     return list(dict.fromkeys((base or []) + [n for n in site or [] if not na_base(n)]))
 
