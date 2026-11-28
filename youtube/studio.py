@@ -44,7 +44,9 @@ SELETORES = {
     # Playwright eles nunca ficam visiveis. O que aparece e o paper-dialog de dentro.
     "playlist_dialogo": "ytcp-playlist-dialog tp-yt-paper-dialog",
     "playlist_pesquisa": "ytcp-playlist-dialog ytcp-search-bar input",
-    "playlist_linha": "ytcp-playlist-dialog li.row",
+    # Em nov/2026 a linha deixou de ser <li> e virou <div role="listitem"> numa
+    # iron-list; fica o formato velho tambem, caso o Studio volte atras.
+    "playlist_linha": "ytcp-playlist-dialog li.row, ytcp-playlist-dialog .row[role='listitem']",
     "playlist_concluir": "ytcp-playlist-dialog ytcp-button.done-button",
     "playlist_vazia": "ytcp-playlist-dialog >> text=/Nenhuma playlist/i",
     "nao_infantil": 'tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]',
